@@ -175,7 +175,8 @@ class _PlayerControlsState extends State<PlayerControls> {
     final duration = state.duration.inMilliseconds / 1000;
     final position = state.position.inMilliseconds / 1000;
     final buffered = state.buffer.inMilliseconds / 1000;
-    final visible = _visible ||
+    final visible =
+        _visible ||
         (!widget.seamless && (!state.playing || state.buffering)) ||
         widget.panelOpen;
     return MouseRegion(

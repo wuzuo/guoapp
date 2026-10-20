@@ -7,19 +7,58 @@ import 'danmaku_models.dart';
 
 // 红果弹幕表情代码 -> Unicode emoji（对齐 hgtv-tv 的 DanmakuLayer.EMOJI_MAP）。
 const Map<String, String> _danmakuEmojiMap = {
-  '[微笑]': '😊', '[偷笑]': '🤭', '[笑]': '😄', '[什么]': '😳',
-  '[害羞]': '🥰', '[爱慕]': '😍', '[飞吻]': '😘', '[奸笑]': '😏',
-  '[尬笑]': '😅', '[思考]': '🤔', '[撇嘴]': '😒', '[做鬼脸]': '🤪',
-  '[酷]': '😎', '[翻白眼]': '🙄', '[惊呆]': '😲', '[震惊]': '😱',
-  '[送心]': '💕', '[委屈]': '🥺', '[快哭了]': '😢', '[笑哭]': '😂',
-  '[哭]': '😭', '[大笑]': '🤣', '[舔屏]': '🤤', '[怒]': '😡',
-  '[捂脸]': '🤦', '[吐]': '🤮', '[恐惧]': '😨', '[抓狂]': '🤯',
-  '[敬礼]': '🫡', '[石化]': '🗿', '[OK]': '👌', '[赞]': '👍',
-  '[爱心]': '❤️', '[伤心]': '💔', '[KISS]': '💋', '[懂了]': '👀',
-  '[探究]': '🧐', '[重拳出击]': '👊', '[吃瓜]': '🍉', '[盯]': '👁️',
-  '[你细品]': '🫣', '[赶稿中]': '✍️', '[注意]': '⚠️', '[饱了]': '🫃',
-  '[码住]': '📌', '[学会了]': '✅', '[顶帖]': '🔝', '[求爆更]': '🔥',
-  '[求关注]': '🙏', '[爽]': '😆', '[鼓掌]': '👏', '[没看够]': '🥹',
+  '[微笑]': '😊',
+  '[偷笑]': '🤭',
+  '[笑]': '😄',
+  '[什么]': '😳',
+  '[害羞]': '🥰',
+  '[爱慕]': '😍',
+  '[飞吻]': '😘',
+  '[奸笑]': '😏',
+  '[尬笑]': '😅',
+  '[思考]': '🤔',
+  '[撇嘴]': '😒',
+  '[做鬼脸]': '🤪',
+  '[酷]': '😎',
+  '[翻白眼]': '🙄',
+  '[惊呆]': '😲',
+  '[震惊]': '😱',
+  '[送心]': '💕',
+  '[委屈]': '🥺',
+  '[快哭了]': '😢',
+  '[笑哭]': '😂',
+  '[哭]': '😭',
+  '[大笑]': '🤣',
+  '[舔屏]': '🤤',
+  '[怒]': '😡',
+  '[捂脸]': '🤦',
+  '[吐]': '🤮',
+  '[恐惧]': '😨',
+  '[抓狂]': '🤯',
+  '[敬礼]': '🫡',
+  '[石化]': '🗿',
+  '[OK]': '👌',
+  '[赞]': '👍',
+  '[爱心]': '❤️',
+  '[伤心]': '💔',
+  '[KISS]': '💋',
+  '[懂了]': '👀',
+  '[探究]': '🧐',
+  '[重拳出击]': '👊',
+  '[吃瓜]': '🍉',
+  '[盯]': '👁️',
+  '[你细品]': '🫣',
+  '[赶稿中]': '✍️',
+  '[注意]': '⚠️',
+  '[饱了]': '🫃',
+  '[码住]': '📌',
+  '[学会了]': '✅',
+  '[顶帖]': '🔝',
+  '[求爆更]': '🔥',
+  '[求关注]': '🙏',
+  '[爽]': '😆',
+  '[鼓掌]': '👏',
+  '[没看够]': '🥹',
   '[送花]': '🌹',
 };
 
@@ -74,7 +113,8 @@ List<DanmakuFlight> planDanmaku(
     }
     final rawRunes = item.text.runes;
     final raw =
-        String.fromCharCodes(rawRunes.take(100)) + (rawRunes.length > 100 ? '…' : '');
+        String.fromCharCodes(rawRunes.take(100)) +
+        (rawRunes.length > 100 ? '…' : '');
     // 用表情替换后的显示文本测量宽度，避免 [微笑] 与 emoji 宽度不一致。
     final display = danmakuSegments(raw).map((segment) => segment.$1).join('');
     final size = measure(display).ceilToDouble() + 8;
@@ -309,7 +349,13 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
     animation: _motion,
     child: RepaintBoundary(
       child: Text.rich(
-        TextSpan(children: _danmakuSpans(widget.flight.text, widget.style, widget.scaler)),
+        TextSpan(
+          children: _danmakuSpans(
+            widget.flight.text,
+            widget.style,
+            widget.scaler,
+          ),
+        ),
         textDirection: TextDirection.ltr,
         textScaler: widget.scaler,
         maxLines: 1,
@@ -328,7 +374,11 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
 }
 
 /// 把弹幕拆成内联片段：文字段用黑描边 + 白填充，表情段用原生彩色 emoji 不加描边。
-List<InlineSpan> _danmakuSpans(String text, TextStyle style, TextScaler scaler) {
+List<InlineSpan> _danmakuSpans(
+  String text,
+  TextStyle style,
+  TextScaler scaler,
+) {
   final segments = danmakuSegments(text);
   return [
     for (final (content, isEmoji) in segments)
