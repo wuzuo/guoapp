@@ -198,15 +198,17 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
-	if nativeErr == nil {
+	// 网页免签直链优先：hongguoduanju.com/player 的 main_url 免签名、免解密，
+	// 不再依赖签名服务 / 代理（对齐 hgtv-tv 的 PlaybackResolver）。
+	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
+	if pageErr == nil {
 		return media, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
-	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
-	if pageErr == nil {
+	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
+	if nativeErr == nil {
 		return media, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -216,7 +218,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if apiErr == nil {
 		return media, nil
 	}
-	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(pageErr), apiErr)
+	return providerMedia{}, fmt.Errorf("红果网页取流失败：%v；App 取流失败：%v；备用取流失败：%w", publicError(pageErr), publicError(nativeErr), apiErr)
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
@@ -224,6 +226,9 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 	body, err := d.fetchProviderText(ctx, pageURL, hongguoBaseURL+"/")
 	if err != nil {
 		return providerMedia{}, err
+	}
+	if strings.Contains(body, "cf-chl-") || strings.Contains(body, "<title>Just a moment") {
+		return providerMedia{}, fmt.Errorf("红果站点要求浏览器验证，请稍后重试")
 	}
 	page := routerLoaderMap(parseRouterData(body), "player_", "player_page")
 	if mapString(page, "vid") != videoID || mapString(page, "series_id") != seriesID {
@@ -235,7 +240,9 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 		return providerMedia{}, fmt.Errorf("红果该集未提供公开播放地址，可能需要登录或 App 授权；不会将试看集冒充该集下载")
 	}
 	duration, _ := strconv.ParseFloat(mapString(info, "duration"), 64)
-	media := providerMedia{URL: addresses[0], Referer: d.providerBaseURL(sourceHongguo) + "/", Duration: time.Duration(duration * float64(time.Second))}
+	// 媒体本体请求带 novel.snssdk.com 的 Referer/Origin（对齐 hgtv-tv 的 playbackHeaders），
+	// 否则 CDN 可能 403；页面抓取仍用 hongguoduanju.com 的 Referer。
+	media := providerMedia{URL: addresses[0], Referer: "https://novel.snssdk.com/", Duration: time.Duration(duration * float64(time.Second))}
 	for _, address := range addresses {
 		variant := media
 		variant.URL, variant.Variants = address, nil

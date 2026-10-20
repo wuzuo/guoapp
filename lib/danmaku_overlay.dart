@@ -5,12 +5,44 @@ import 'package:flutter/material.dart';
 import 'danmaku_controller.dart';
 import 'danmaku_models.dart';
 
-class DanmakuFlight {
-  const DanmakuFlight(this.item, this.text, this.lane, this.width);
-  final DanmakuItem item;
-  final String text;
-  final int lane;
-  final double width;
+// 红果弹幕表情代码 -> Unicode emoji（对齐 hgtv-tv 的 DanmakuLayer.EMOJI_MAP）。
+const Map<String, String> _danmakuEmojiMap = {
+  '[微笑]': '😊', '[偷笑]': '🤭', '[笑]': '😄', '[什么]': '😳',
+  '[害羞]': '🥰', '[爱慕]': '😍', '[飞吻]': '😘', '[奸笑]': '😏',
+  '[尬笑]': '😅', '[思考]': '🤔', '[撇嘴]': '😒', '[做鬼脸]': '🤪',
+  '[酷]': '😎', '[翻白眼]': '🙄', '[惊呆]': '😲', '[震惊]': '😱',
+  '[送心]': '💕', '[委屈]': '🥺', '[快哭了]': '😢', '[笑哭]': '😂',
+  '[哭]': '😭', '[大笑]': '🤣', '[舔屏]': '🤤', '[怒]': '😡',
+  '[捂脸]': '🤦', '[吐]': '🤮', '[恐惧]': '😨', '[抓狂]': '🤯',
+  '[敬礼]': '🫡', '[石化]': '🗿', '[OK]': '👌', '[赞]': '👍',
+  '[爱心]': '❤️', '[伤心]': '💔', '[KISS]': '💋', '[懂了]': '👀',
+  '[探究]': '🧐', '[重拳出击]': '👊', '[吃瓜]': '🍉', '[盯]': '👁️',
+  '[你细品]': '🫣', '[赶稿中]': '✍️', '[注意]': '⚠️', '[饱了]': '🫃',
+  '[码住]': '📌', '[学会了]': '✅', '[顶帖]': '🔝', '[求爆更]': '🔥',
+  '[求关注]': '🙏', '[爽]': '😆', '[鼓掌]': '👏', '[没看够]': '🥹',
+  '[送花]': '🌹',
+};
+
+final RegExp _danmakuEmojiPattern = RegExp(r'\[[^\]]+\]');
+
+/// 把 `[表情]` 代码替换为 Unicode emoji，未知代码保持原样；返回分段列表。
+List<(String, bool)> danmakuSegments(String source) {
+  final segments = <(String, bool)>[];
+  var last = 0;
+  for (final match in _danmakuEmojiPattern.allMatches(source)) {
+    final emoji = _danmakuEmojiMap[match.group(0)];
+    if (emoji == null) continue;
+    if (match.start > last) {
+      segments.add((source.substring(last, match.start), false));
+    }
+    segments.add((emoji, true));
+    last = match.end;
+  }
+  if (last < source.length) {
+    segments.add((source.substring(last), false));
+  }
+  if (segments.isEmpty) segments.add((source, false));
+  return segments;
 }
 
 List<DanmakuFlight> planDanmaku(
@@ -20,7 +52,8 @@ List<DanmakuFlight> planDanmaku(
   required double Function(String) measure,
 }) {
   if (!width.isFinite || width <= 0 || rows < 1) return const [];
-  final lanes = List<DanmakuFlight?>.filled(rows.clamp(1, 4), null);
+  // 与 hgtv-tv 一致：屏幕上方两行，放不下则丢弃，优先保证不重叠。
+  final lanes = List<DanmakuFlight?>.filled(rows.clamp(1, 2), null);
   final sorted = items.toList()..sort((a, b) => a.timeMs.compareTo(b.timeMs));
   final seen = <String>{};
   final flights = <DanmakuFlight>[];
@@ -39,10 +72,12 @@ List<DanmakuFlight> planDanmaku(
         24) {
       continue;
     }
-    final runes = item.text.runes;
-    final text =
-        String.fromCharCodes(runes.take(100)) + (runes.length > 100 ? '…' : '');
-    final size = measure(text).ceilToDouble() + 8;
+    final rawRunes = item.text.runes;
+    final raw =
+        String.fromCharCodes(rawRunes.take(100)) + (rawRunes.length > 100 ? '…' : '');
+    // 用表情替换后的显示文本测量宽度，避免 [微笑] 与 emoji 宽度不一致。
+    final display = danmakuSegments(raw).map((segment) => segment.$1).join('');
+    final size = measure(display).ceilToDouble() + 8;
     final lane = lanes.indexWhere((previous) {
       if (previous == null) return true;
       final gap = item.timeMs - previous.item.timeMs;
@@ -57,11 +92,19 @@ List<DanmakuFlight> planDanmaku(
               24;
     });
     if (lane < 0) continue;
-    final flight = DanmakuFlight(item, text, lane, size);
+    final flight = DanmakuFlight(item, raw, lane, size);
     lanes[lane] = flight;
     flights.add(flight);
   }
   return flights;
+}
+
+class DanmakuFlight {
+  const DanmakuFlight(this.item, this.text, this.lane, this.width);
+  final DanmakuItem item;
+  final String text;
+  final int lane;
+  final double width;
 }
 
 class DanmakuOverlay extends StatefulWidget {
@@ -103,18 +146,16 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> {
             constraints.maxHeight,
             constraints.maxWidth / aspect,
           );
-          final fontSize = width < 600 ? 16.0 : 20.0;
+          // 与 hgtv-tv 一致：字号约 18dp（窄屏 16），仅屏幕上方两行。
+          final fontSize = width < 480 ? 16.0 : 18.0;
           final scaler = MediaQuery.textScalerOf(context);
           final rowHeight = scaler.scale(fontSize) * 1.5;
-          final rows = ((height * .55 - 8) / rowHeight).floor().clamp(0, 4);
+          final rows = ((height - 8) / rowHeight).floor().clamp(0, 2);
           final style = TextStyle(
             fontSize: fontSize,
             fontWeight: FontWeight.w600,
             color: Colors.white,
             height: 1.2,
-            shadows: const [
-              Shadow(color: Colors.black, blurRadius: 3, offset: Offset(1, 1)),
-            ],
           );
           return Center(
             child: SizedBox(
@@ -267,11 +308,10 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _motion,
     child: RepaintBoundary(
-      child: Text(
-        widget.flight.text,
-        style: widget.style,
-        textScaler: widget.scaler,
+      child: Text.rich(
+        TextSpan(children: _danmakuSpans(widget.flight.text, widget.style, widget.scaler)),
         textDirection: TextDirection.ltr,
+        textScaler: widget.scaler,
         maxLines: 1,
         softWrap: false,
       ),
@@ -285,4 +325,61 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
       child: child,
     ),
   );
+}
+
+/// 把弹幕拆成内联片段：文字段用黑描边 + 白填充，表情段用原生彩色 emoji 不加描边。
+List<InlineSpan> _danmakuSpans(String text, TextStyle style, TextScaler scaler) {
+  final segments = danmakuSegments(text);
+  return [
+    for (final (content, isEmoji) in segments)
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: isEmoji
+            ? Text(
+                content,
+                style: style,
+                textScaler: scaler,
+                textDirection: TextDirection.ltr,
+              )
+            : _DanmakuStrokeText(content, style, scaler),
+      ),
+  ];
+}
+
+/// 白字 + 黑描边两层（对齐 hgtv-tv 的 textPaint 描边绘制）。
+class _DanmakuStrokeText extends StatelessWidget {
+  const _DanmakuStrokeText(this.text, this.style, this.scaler);
+  final String text;
+  final TextStyle style;
+  final TextScaler scaler;
+
+  @override
+  Widget build(BuildContext context) {
+    final strokeWidth = math.max(2.0, (style.fontSize ?? 18) * 0.16);
+    return Stack(
+      children: [
+        Text(
+          text,
+          textScaler: scaler,
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          softWrap: false,
+          style: style.copyWith(
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = strokeWidth
+              ..color = Colors.black,
+          ),
+        ),
+        Text(
+          text,
+          style: style,
+          textScaler: scaler,
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          softWrap: false,
+        ),
+      ],
+    );
+  }
 }
