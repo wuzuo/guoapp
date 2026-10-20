@@ -198,15 +198,8 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	// 网页免签直链优先：hongguoduanju.com/player 的 main_url 免签名、免解密，
-	// 不再依赖签名服务 / 代理（对齐 hgtv-tv 的 PlaybackResolver）。
-	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
-	if pageErr == nil {
-		return media, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return providerMedia{}, err
-	}
+	// App 签名直连优先：multi_video_model/preload/v1 是当前唯一稳定可用的红果取流方式
+	// （站点改版后网页不再暴露 main_url，旧 /novel/player/video_model/v1/ 会被网关静默返回空体）。
 	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
 	if nativeErr == nil {
 		return media, nil
@@ -214,11 +207,20 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
+	// 网页免签直链：兜底；多数加密集已不再暴露 main_url，仅个别公开集可能可用。
+	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
+	if pageErr == nil {
+		return media, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	// 第三方代理兜底。
 	media, apiErr := d.resolveHongguoPlaybackAPI(ctx, seriesID, videoID)
 	if apiErr == nil {
 		return media, nil
 	}
-	return providerMedia{}, fmt.Errorf("红果网页取流失败：%v；App 取流失败：%v；备用取流失败：%w", publicError(pageErr), publicError(nativeErr), apiErr)
+	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(pageErr), apiErr)
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {

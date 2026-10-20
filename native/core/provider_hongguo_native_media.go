@@ -16,22 +16,59 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
+	// 红果取播放地址接口自 2026-10 起仅 multi_video_model/preload/v1 可用：
+	// 旧的 /novel/player/video_model/v1/（顶层 video_id + video_platform=3）会被网关静默返回空体。
+	// 这里对齐 hgtv-tv 的 videoModels：preload 入口 + video_platform=1024 +
+	// mixed_video_id_map（键固定为 "1"）+ 端内原生 X-Gorgon 签名，返回 video_model（含 video_list 与 spade_a）。
 	payload := map[string]any{
-		"video_id": videoID, "content_type": 1,
-		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
+		"biz_param": map[string]any{
+			"detail_page_version":       0,
+			"device_level":              3,
+			"disable_digg_stat":         false,
+			"disable_video_relate_book": false,
+			"need_all_video_definition": true,
+			"need_mp4_align":            false,
+			"use_os_player":             false,
+			"use_server_dns":            false,
+			"video_platform":            1024,
+		},
+		"dr_scene":           "preload",
+		"mixed_video_id_map": map[string]any{"1": []any{videoID}},
 	}
-	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/video_model/v1/", nil, payload)
+	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/multi_video_model/preload/v1/", nil, payload)
 	if err != nil {
 		return providerMedia{}, err
 	}
 	data := nestedMap(result, "data")
-	model, _ := data["video_model"].(map[string]any)
-	if encoded, ok := data["video_model"].(string); ok {
-		decoder := json.NewDecoder(strings.NewReader(encoded))
-		decoder.UseNumber()
-		if err := decoder.Decode(&model); err != nil {
-			return providerMedia{}, errors.New("红果 App 播放信息格式异常")
+	// 响应结构为 data.{videoID}.video_model（video_model 可能是 JSON 字符串）。
+	entry := nestedMap(data, videoID)
+	if len(entry) == 0 {
+		for _, v := range data {
+			if m, ok := v.(map[string]any); ok && len(m) > 0 {
+				entry = m
+				break
+			}
 		}
+	}
+	if len(entry) == 0 {
+		return providerMedia{}, errors.New("红果 App 未返回该集播放信息")
+	}
+	var model map[string]any
+	switch v := entry["video_model"].(type) {
+	case map[string]any:
+		model = v
+	case string:
+		if v != "" && v != "null" {
+			decoder := json.NewDecoder(strings.NewReader(v))
+			decoder.UseNumber()
+			var decoded map[string]any
+			if err := decoder.Decode(&decoded); err == nil {
+				model = decoded
+			}
+		}
+	}
+	if len(model) == 0 {
+		return providerMedia{}, errors.New("红果 App 未返回该集播放信息")
 	}
 	return selectHongguoAppMedia(model)
 }
