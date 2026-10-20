@@ -97,6 +97,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
   bool _autoAdvance = true;
+  bool _seamlessAdvance = false;
   bool? _systemFullscreen;
   Orientation? _lastOrientation;
   bool _closed = false;
@@ -206,6 +207,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _foreground &&
               !_panelOpen &&
               _index + 1 < widget.detail.episodes.length) {
+            if (_showFullscreen && !_mobile) _seamlessAdvance = true;
             _play(_index + 1);
           } else {
             _playIntent = false;
@@ -220,6 +222,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       _player.stream.position.listen((position) {
         if (!_closed && _openedIndex == _index && position > Duration.zero) {
           _resumePosition = position.inMilliseconds / 1000;
+        }
+        if (_seamlessAdvance &&
+            _player.state.playing &&
+            position > const Duration(milliseconds: 1200)) {
+          _seamlessAdvance = false;
+          if (mounted) setState(() {});
         }
         _syncDanmaku();
         _syncPreload();
@@ -1291,6 +1299,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             interactions: _interactions,
             enabled: !_loading && _error == null,
             panelOpen: _panelOpen,
+            seamless: _seamlessAdvance,
             fullscreen: _showFullscreen,
             title: title,
             onTogglePlayback: _togglePlayback,

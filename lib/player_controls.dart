@@ -29,6 +29,7 @@ class PlayerControls extends StatefulWidget {
     required this.onFocusSurface,
     this.swipeEnabled = false,
     this.panelOpen = false,
+    this.seamless = false,
     this.onSeek,
     this.onPush,
   });
@@ -51,6 +52,7 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback onFocusSurface;
   final bool swipeEnabled;
   final bool panelOpen;
+  final bool seamless;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function()? onPush;
 
@@ -67,6 +69,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   @override
   void initState() {
     super.initState();
+    if (widget.seamless) _visible = false;
     for (final stream in [
       widget.player.stream.position,
       widget.player.stream.duration,
@@ -89,9 +92,14 @@ class _PlayerControlsState extends State<PlayerControls> {
   @override
   void didUpdateWidget(PlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.enabled != oldWidget.enabled ||
-        widget.panelOpen != oldWidget.panelOpen ||
-        widget.fullscreen != oldWidget.fullscreen) {
+    if (widget.seamless && !oldWidget.seamless) {
+      _seekValue = null;
+      _visible = false;
+    }
+    if (!widget.seamless &&
+        (widget.enabled != oldWidget.enabled ||
+            widget.panelOpen != oldWidget.panelOpen ||
+            widget.fullscreen != oldWidget.fullscreen)) {
       _seekValue = null;
       _visible = true;
       _scheduleHide();
@@ -99,7 +107,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   void _interactionChanged() {
-    if (mounted && widget.interactions.feedback.isNotEmpty) _show();
+    if (mounted && widget.interactions.feedback.isNotEmpty) _show(user: true);
   }
 
   void _scheduleHide() {
@@ -123,8 +131,9 @@ class _PlayerControlsState extends State<PlayerControls> {
     });
   }
 
-  void _show() {
+  void _show({bool user = false}) {
     if (!mounted) return;
+    if (widget.seamless && !user) return;
     if (!_visible) setState(() => _visible = true);
     _scheduleHide();
   }
@@ -136,7 +145,7 @@ class _PlayerControlsState extends State<PlayerControls> {
         MediaQuery.orientationOf(context) == Orientation.portrait &&
         widget.enabled) {
       widget.onTogglePlayback();
-      _show();
+      _show(user: true);
     } else {
       setState(() => _visible = !_visible);
       _scheduleHide();
@@ -147,7 +156,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     _hideTimer?.cancel();
     widget.interactions.cancel();
     await open();
-    _show();
+    _show(user: true);
   }
 
   @override
@@ -166,10 +175,11 @@ class _PlayerControlsState extends State<PlayerControls> {
     final duration = state.duration.inMilliseconds / 1000;
     final position = state.position.inMilliseconds / 1000;
     final buffered = state.buffer.inMilliseconds / 1000;
-    final visible =
-        _visible || !state.playing || state.buffering || widget.panelOpen;
+    final visible = _visible ||
+        (!widget.seamless && (!state.playing || state.buffering)) ||
+        widget.panelOpen;
     return MouseRegion(
-      onHover: (_) => _show(),
+      onHover: (_) => _show(user: true),
       cursor: visible ? SystemMouseCursors.basic : SystemMouseCursors.none,
       child: LayoutBuilder(
         builder: (context, constraints) => Stack(
@@ -197,11 +207,11 @@ class _PlayerControlsState extends State<PlayerControls> {
                     return;
                   }
                   widget.onTogglePlayback();
-                  _show();
+                  _show(user: true);
                 },
               ),
             ),
-            if (state.buffering && widget.enabled)
+            if (state.buffering && widget.enabled && !widget.seamless)
               const IgnorePointer(
                 child: Center(child: CircularProgressIndicator()),
               ),
@@ -296,7 +306,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                                       iconSize: 38,
                                       onPressed: () {
                                         widget.onTogglePlayback();
-                                        _show();
+                                        _show(user: true);
                                       },
                                       icon: Icon(
                                         state.playing
@@ -360,7 +370,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                                           );
                                         }
                                         setState(() => _seekValue = null);
-                                        _show();
+                                        _show(user: true);
                                       },
                                     ),
                                   ),
