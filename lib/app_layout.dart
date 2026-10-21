@@ -69,26 +69,20 @@ class AppLayout extends InheritedWidget {
   const AppLayout({
     super.key,
     required this.television,
-    this.desktop = false,
     this.version = appVersion,
     required super.child,
   });
   final bool television;
-  final bool desktop;
   final String version;
 
   static bool isTelevision(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.television ??
       false;
-  static bool isDesktop(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AppLayout>()?.desktop ?? false;
   static String versionOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.version ??
       appVersion;
 
   @override
   bool updateShouldNotify(AppLayout oldWidget) =>
-      television != oldWidget.television ||
-      desktop != oldWidget.desktop ||
-      version != oldWidget.version;
+      television != oldWidget.television || version != oldWidget.version;
 }

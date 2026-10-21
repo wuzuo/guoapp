@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'core_bridge.dart';
 import 'app_layout.dart';
 import 'models.dart';
-import 'neumorphic.dart';
 import 'remote_widgets.dart';
 
 Future<void> saveUserChange(
@@ -360,11 +359,7 @@ class DramaTile extends StatelessWidget {
       1.3;
 
   static double extentFor(BuildContext context, double width) =>
-      (width * 1.5 +
-              13 +
-              titleHeight(context) +
-              subtitleHeight(context) +
-              (AppLayout.isDesktop(context) ? 18 : 0))
+      (width * 1.5 + 13 + titleHeight(context) + subtitleHeight(context))
           .ceilToDouble();
 
   @override
@@ -465,22 +460,6 @@ class DramaTile extends StatelessWidget {
         ),
       ],
     );
-    if (AppLayout.isDesktop(context)) {
-      return Semantics(
-        button: true,
-        selected: selected,
-        label: '${drama.title}，${drama.episodes}集',
-        child: NeuHover(
-          radius: 20,
-          padding: const EdgeInsets.all(9),
-          selected: selected == true,
-          onTap: onTap,
-          onLongPress: onLongPress ?? onMore,
-          onSecondaryTap: onMore,
-          child: content,
-        ),
-      );
-    }
     if (television) {
       return CallbackShortcuts(
         bindings: {
@@ -572,11 +551,8 @@ class StatusPanel extends StatelessWidget {
 }
 
 SliverGridDelegate dramaGridDelegate(BuildContext context, double width) {
-  final desktop = AppLayout.isDesktop(context);
-  final columns = width < 600
-      ? 3
-      : (width / (desktop ? 196 : 180)).floor().clamp(4, desktop ? 8 : 9);
-  final spacing = width < 600 ? 10.0 : (desktop ? 22.0 : 18.0);
+  final columns = width < 600 ? 3 : (width / 180).floor().clamp(4, 9);
+  final spacing = width < 600 ? 10.0 : 18.0;
   final tileWidth = (width - (columns - 1) * spacing) / columns;
   return SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: columns,

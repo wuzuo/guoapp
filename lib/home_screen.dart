@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 
 import 'app_layout.dart';
 import 'app_bottom_navigation.dart';
-import 'desktop_shell.dart';
-import 'neumorphic.dart';
 import 'core_bridge.dart';
 import 'catalog_filters.dart';
 import 'catalog_browser.dart';
@@ -730,12 +728,11 @@ class _HomeScreenState extends State<HomeScreen> {
     builder: (context, _) => LayoutBuilder(
       builder: (context, constraints) {
         final television = AppLayout.isTelevision(context);
-        final desktopDesign = AppLayout.isDesktop(context);
         final desktop = constraints.maxWidth >= 840;
         final scaffold = Scaffold(
           appBar: AppBar(
-            toolbarHeight: television ? 64 : (desktopDesign ? 76 : null),
-            titleSpacing: desktopDesign ? 24 : 12,
+            toolbarHeight: television ? 64 : null,
+            titleSpacing: 12,
             title: _selectionMode
                 ? const Text(
                     '选择短剧',
@@ -972,34 +969,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const VerticalDivider(width: 1),
-                ] else if (AppLayout.isDesktop(context)) ...[
-                  DesktopNavRail(
-                    index: _tab,
-                    onSelected: _changeTab,
-                    items: [
-                      const DesktopNavItem(
-                        icon: Icons.explore_outlined,
-                        selectedIcon: Icons.explore_rounded,
-                        label: '发现',
-                      ),
-                      const DesktopNavItem(
-                        icon: Icons.bookmark_border_rounded,
-                        selectedIcon: Icons.bookmark_rounded,
-                        label: '追剧',
-                      ),
-                      const DesktopNavItem(
-                        icon: Icons.history_rounded,
-                        selectedIcon: Icons.history_rounded,
-                        label: '最近观看',
-                      ),
-                      if (widget.store.canDownload)
-                        const DesktopNavItem(
-                          icon: Icons.download_outlined,
-                          selectedIcon: Icons.download_rounded,
-                          label: '下载',
-                        ),
-                    ],
-                  ),
                 ] else if (desktop) ...[
                   NavigationRail(
                     selectedIndex: _tab,
@@ -1038,10 +1007,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 title: '暂无可用站源',
                                 message: '请联系管理员为当前用户开放站源。',
                               )
-                            : _catalog(
-                                selectionInBody:
-                                    desktop || television || desktopDesign,
-                              )
+                            : _catalog(selectionInBody: desktop || television)
                       : _tab == 3
                       ? DownloadsScreen(
                           repository: widget.repository,
@@ -1066,7 +1032,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          bottomNavigationBar: desktop || television || desktopDesign
+          bottomNavigationBar: desktop || television
               ? null
               : _selectionMode
               ? _selectionBar()
@@ -1177,10 +1143,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-        if (AppLayout.isDesktop(context) &&
-            !_showRecommendations &&
-            _search.text.trim().isEmpty)
-          _continueShelf(),
         CatalogFilters(
           key: ValueKey('filters-${_group.id}'),
           categories: _displayCategories,
@@ -1330,9 +1292,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           );
                         }
-                        final padding = AppLayout.isDesktop(context)
-                            ? 32.0
-                            : constraints.maxWidth < 600
+                        final padding = constraints.maxWidth < 600
                             ? 16.0
                             : 24.0;
                         return RefreshIndicator(
@@ -1396,81 +1356,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _selectionBar(safeBottom: false),
         ],
       ],
-    );
-  }
-
-  Widget _continueShelf() {
-    final entries = widget.store.history
-        .where((entry) => widget.store.allowsSource(entry.drama.source))
-        .take(12)
-        .toList();
-    if (entries.isEmpty) return const SizedBox.shrink();
-    final palette = NeuTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 2, 24, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          NeuSectionLabel(
-            '继续观看',
-            trailing: Text(
-              '最近 ${entries.length} 部',
-              style: TextStyle(fontSize: 11.5, color: palette.muted),
-            ),
-          ),
-          SizedBox(
-            height: 224,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(2, 4, 8, 14),
-              itemCount: entries.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                return SizedBox(
-                  width: 118,
-                  child: NeuHover(
-                    radius: 18,
-                    padding: const EdgeInsets.all(6),
-                    onTap: () => _openDrama(entry.drama, resume: true),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        AspectRatio(
-                          aspectRatio: 2 / 3,
-                          child: DramaCover(
-                            drama: entry.drama,
-                            repository: widget.repository,
-                            radius: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          entry.drama.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: palette.text,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '看到第 ${entry.episode} 集',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: palette.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 
