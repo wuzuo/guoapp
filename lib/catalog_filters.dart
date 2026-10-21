@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_layout.dart';
 import 'models.dart';
+import 'neumorphic.dart';
 import 'remote_widgets.dart';
 
 class CatalogFilters extends StatefulWidget {
@@ -54,6 +55,8 @@ class _CatalogFiltersState extends State<CatalogFilters> {
     return SizedBox(
       height: television
           ? 64
+          : AppLayout.isDesktop(context)
+          ? 68
           : max(52, MediaQuery.textScalerOf(context).scale(14) + 28),
       child: Row(
         children: [
@@ -74,6 +77,15 @@ class _CatalogFiltersState extends State<CatalogFilters> {
                               label: entry.name,
                               selected: entry.id == widget.category,
                               onPressed: () => widget.onCategory(entry.id),
+                            )
+                          : AppLayout.isDesktop(context)
+                          ? KeyedSubtree(
+                              key: ValueKey('category-${entry.id}'),
+                              child: NeuChip(
+                                label: entry.name,
+                                selected: entry.id == widget.category,
+                                onSelected: () => widget.onCategory(entry.id),
+                              ),
                             )
                           : ChoiceChip(
                               key: ValueKey('category-${entry.id}'),

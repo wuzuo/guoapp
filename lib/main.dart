@@ -11,6 +11,8 @@ import 'package:window_manager/window_manager.dart';
 import 'core_bridge.dart';
 import 'app_layout.dart';
 import 'app_theme.dart';
+import 'desktop_shell.dart';
+import 'neumorphic.dart';
 import 'home_screen.dart';
 import 'local_store.dart';
 import 'profiles_screen.dart';
@@ -27,6 +29,23 @@ Future<void> main(List<String> arguments) async {
   }
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
+    unawaited(
+      windowManager.waitUntilReadyToShow(
+        const WindowOptions(
+          size: Size(1440, 900),
+          minimumSize: Size(1040, 660),
+          center: true,
+          title: appName,
+          titleBarStyle: TitleBarStyle.hidden,
+          windowButtonVisibility: false,
+          backgroundColor: Color(0xFF2E3238),
+        ),
+        () async {
+          await windowManager.show();
+          await windowManager.focus();
+        },
+      ),
+    );
   }
   MediaKit.ensureInitialized();
   if (Platform.isWindows && arguments.firstOrNull == '--package-smoke') {
@@ -196,88 +215,103 @@ class DuanjuApp extends StatelessWidget {
     builder: (_, _) => _application(),
   );
 
-  Widget _application() => MaterialApp(
-    navigatorKey: navigatorKey,
-    title: appName,
-    debugShowCheckedModeBanner: false,
-    locale: const Locale('zh', 'CN'),
-    supportedLocales: const [Locale('zh', 'CN')],
-    localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: AppTheme.light,
-    darkTheme: AppTheme.dark,
-    themeMode: AppTheme.mode(store?.themeMode ?? 'system'),
-    builder: (context, child) {
-      final mode = store?.displayMode ?? 'auto';
-      final tv = mode == 'television' || mode == 'auto' && television;
-      final theme = Theme.of(context);
-      return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: AppTheme.systemBars(theme.brightness),
-        child: ColoredBox(
-          color: theme.scaffoldBackgroundColor,
-          child: AppLayout(
-            television: tv,
-            version: version,
-            child: Theme(
-              data: tv ? televisionTheme(theme) : theme,
-              child: Shortcuts(
-                shortcuts: const {
-                  SingleActivator(
-                    LogicalKeyboardKey.select,
-                    includeRepeats: false,
-                  ): ActivateIntent(),
-                  SingleActivator(
-                    LogicalKeyboardKey.gameButtonA,
-                    includeRepeats: false,
-                  ): ActivateIntent(),
-                  SingleActivator(LogicalKeyboardKey.goBack): DismissIntent(),
-                },
-                child: FocusTraversalGroup(child: child!),
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-    home: store != null
-        ? store!.locked
-              ? ProfilesScreen(store: store!, locked: true)
-              : HomeScreen(
-                  key: ValueKey(
-                    'profile-${store!.profile.id}-${store!.profileEpoch}',
-                  ),
-                  repository: repository,
-                  store: store!,
-                )
-        : Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.play_circle_fill_rounded,
-                      color: Color(0xFFFF765F),
-                      size: 72,
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      bootstrapError ?? '正在打开$appName',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 24),
-                    if (bootstrapError == null)
-                      const CircularProgressIndicator()
-                    else
-                      FilledButton(
-                        onPressed: onRetry,
-                        child: const Text('重新打开'),
-                      ),
-                  ],
+  Widget _application() {
+    final mode = store?.displayMode ?? 'auto';
+    final tv = mode == 'television' || mode == 'auto' && television;
+    final desktops = Platform.isWindows && !tv;
+    return MaterialApp(
+      navigatorKey: navigatorKey,
+      title: appName,
+      debugShowCheckedModeBanner: false,
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      theme: desktops
+          ? AppTheme.neumorphic(NeuPalette.softGray)
+          : AppTheme.light,
+      darkTheme: desktops
+          ? AppTheme.neumorphic(NeuPalette.deepDark)
+          : AppTheme.dark,
+      themeMode: AppTheme.mode(store?.themeMode ?? 'system'),
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        final wide = MediaQuery.sizeOf(context).width >= 900;
+        final desktop = Platform.isWindows && !tv && wide;
+        Widget content = Shortcuts(
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.select, includeRepeats: false):
+                ActivateIntent(),
+            SingleActivator(
+              LogicalKeyboardKey.gameButtonA,
+              includeRepeats: false,
+            ): ActivateIntent(),
+            SingleActivator(LogicalKeyboardKey.goBack): DismissIntent(),
+          },
+          child: FocusTraversalGroup(child: child!),
+        );
+        if (desktop) {
+          content = DesktopWindowFrame(title: appName, child: content);
+        }
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: AppTheme.systemBars(theme.brightness),
+          child: ColoredBox(
+            color: theme.scaffoldBackgroundColor,
+            child: AppLayout(
+              television: tv,
+              desktop: desktop,
+              version: version,
+              child: Theme(
+                data: tv ? televisionTheme(theme) : theme,
+                child: NeuTheme(
+                  palette: NeuPalette.forBrightness(theme.brightness),
+                  child: content,
                 ),
               ),
             ),
           ),
-  );
+        );
+      },
+      home: store != null
+          ? store!.locked
+                ? ProfilesScreen(store: store!, locked: true)
+                : HomeScreen(
+                    key: ValueKey(
+                      'profile-${store!.profile.id}-${store!.profileEpoch}',
+                    ),
+                    repository: repository,
+                    store: store!,
+                  )
+          : Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: Color(0xFFFF765F),
+                        size: 72,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        bootstrapError ?? '正在打开$appName',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                      const SizedBox(height: 24),
+                      if (bootstrapError == null)
+                        const CircularProgressIndicator()
+                      else
+                        FilledButton(
+                          onPressed: onRetry,
+                          child: const Text('重新打开'),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
 }
