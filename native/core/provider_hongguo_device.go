@@ -229,7 +229,7 @@ func (downloader *Downloader) registerHongguoDevice(ctx context.Context) (honggu
 	}
 	now := time.Now()
 	sum := md5.Sum(body)
-	request.Header.Set("User-Agent", hongguoAppUserAgent)
+	request.Header.Set("User-Agent", hongguoAppUA)
 	request.Header.Set("Content-Type", "application/octet-stream;tt-data=a")
 	request.Header.Set("log-encode-type", "gzip")
 	request.Header.Set("x-ss-dp", "8662")

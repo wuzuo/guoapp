@@ -12,54 +12,130 @@ import (
 	"time"
 )
 
+const hongguoPlaybackBlankRetries = 3
+
+// hongguoPlaybackBizParam 与参考实现 hgtv-tv 的取流 biz_param 对齐。
+func hongguoPlaybackBizParam() map[string]any {
+	return map[string]any{
+		"detail_page_version":       0,
+		"device_level":              3,
+		"disable_digg_stat":         false,
+		"need_all_video_definition": true,
+		"need_mp4_align":            false,
+		"use_os_player":             false,
+		"use_server_dns":            false,
+		"video_platform":            1024,
+	}
+}
+
+// resolveHongguoAppMedia 按候选端点顺序取播放模型，取第一个能拿到 video_model 的。
+// 平台 2026-10 两次改版后：带场景段的 multi_video_model 一律 200+0 字节，旧 multi_video_model/v1
+// 回 110001；当前可用的是 video_model/v1（video_id 单值）。网关偶发 200+0 字节（匿名/风控），
+// 因此空响应原地重试几次再换下一条，避免把唯一能用的路径跳过去。
 func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoID string) (providerMedia, error) {
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
 	ctx = context.WithValue(ctx, hongguoCookieKey{}, true)
-	// 红果取播放地址接口（2026-10-14 起）：POST /novel/player/video_model/v1/，
-	// 请求体为 video_id 单值 + biz_param；biz_param 带上才返回完整 5 档清晰度。
-	// 未注册设备会回 101000，注册设备（见 provider_hongguo_device.go）回 code 0；
-	// 空响应体也按失败处理，交由 resolveHongguoMedia 的网页兜底继续。
-	payload := map[string]any{
-		"video_id": videoID,
-		"biz_param": map[string]any{
-			"detail_page_version":       0,
-			"device_level":              3,
-			"disable_digg_stat":         false,
-			"disable_video_relate_book": false,
-			"need_all_video_definition": true,
-			"need_mp4_align":            false,
-			"use_os_player":             false,
-			"use_server_dns":            false,
-			"video_platform":            1024,
-		},
+	biz := hongguoPlaybackBizParam()
+	videoModelBody := map[string]any{"video_id": videoID, "biz_param": biz}
+	mixedBody := map[string]any{"biz_param": biz, "mixed_video_id_map": map[string]any{"1004": []string{videoID}}}
+	candidates := []struct {
+		path string
+		body any
+	}{
+		{"/novel/player/video_model/v1/", videoModelBody},
+		{"/novel/player/multi_video_model/preload/v1/", mixedBody},
+		{"/novel/player/multi_video_model/default/v1/", mixedBody},
+		{"/novel/player/multi_video_model/detail/v1/", mixedBody},
+		{"/novel/player/multi_video_model/v1/", mixedBody},
 	}
-	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/video_model/v1/", nil, payload)
-	if err != nil {
-		return providerMedia{}, err
+	var lastErr error
+	for _, candidate := range candidates {
+		var result map[string]any
+		var err error
+		// 空响应（网关挡请求）原地重试，避免把唯一能用的路径跳过。
+		for attempt := 0; attempt < hongguoPlaybackBlankRetries; attempt++ {
+			result, err = downloader.hongguoAppRequest(ctx, http.MethodPost, candidate.path, nil, candidate.body)
+			if err == nil {
+				break
+			}
+			if !isHongguoBlankResponseError(err) {
+				break
+			}
+			if attempt < hongguoPlaybackBlankRetries-1 {
+				select {
+				case <-time.After(time.Duration(attempt+1) * 200 * time.Millisecond):
+				case <-ctx.Done():
+					return providerMedia{}, ctx.Err()
+				}
+			}
+		}
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		model := hongguoExtractVideoModel(result, videoID)
+		if len(model) == 0 {
+			lastErr = errors.New("红果 App 未返回该集播放信息")
+			continue
+		}
+		return selectHongguoAppMedia(model)
 	}
-	data := nestedMap(result, "data")
-	// 响应结构为 data.video_model（可能是 JSON 字符串），其内 video_list 为数组，
-	// 元素含 video_meta / encrypt_info.spade_a / main_url / backup_url。
-	var model map[string]any
-	switch v := data["video_model"].(type) {
-	case map[string]any:
-		model = v
-	case string:
-		if v != "" && v != "null" {
-			decoder := json.NewDecoder(strings.NewReader(v))
-			decoder.UseNumber()
-			var decoded map[string]any
-			if err := decoder.Decode(&decoded); err == nil {
-				model = decoded
+	if lastErr == nil {
+		lastErr = errors.New("红果 App 未返回该集播放信息")
+	}
+	return providerMedia{}, lastErr
+}
+
+// hongguoExtractVideoModel 从播放接口响应里取出 video_model：
+// 新路由挂在 data.video_model，带场景段/旧路径挂在 data[<vid>].video_model；
+// video_model 可能是对象或字符串化的 JSON，两种都处理（对齐参考实现 videoModelOf）。
+func hongguoExtractVideoModel(result map[string]any, videoID string) map[string]any {
+	data, _ := result["data"].(map[string]any)
+	if data == nil {
+		return nil
+	}
+	if model := hongguoVideoModelValue(data["video_model"]); model != nil {
+		return model
+	}
+	if entry, ok := data[videoID].(map[string]any); ok {
+		if model := hongguoVideoModelValue(entry["video_model"]); model != nil {
+			return model
+		}
+	}
+	for _, value := range data {
+		if entry, ok := value.(map[string]any); ok {
+			if model := hongguoVideoModelValue(entry["video_model"]); model != nil {
+				return model
 			}
 		}
 	}
-	if len(model) == 0 {
-		return providerMedia{}, errors.New("红果 App 未返回该集播放信息")
+	return nil
+}
+
+func hongguoVideoModelValue(value any) map[string]any {
+	switch v := value.(type) {
+	case map[string]any:
+		return v
+	case string:
+		if v == "" || v == "null" {
+			return nil
+		}
+		decoder := json.NewDecoder(strings.NewReader(v))
+		decoder.UseNumber()
+		var decoded map[string]any
+		if err := decoder.Decode(&decoded); err == nil {
+			return decoded
+		}
 	}
-	return selectHongguoAppMedia(model)
+	return nil
+}
+
+// isHongguoBlankResponseError 判断是否为「网关挡请求返回空体」类错误，
+// 这类错误需要原地重试，而不是立即换下一条候选路径。
+func isHongguoBlankResponseError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "未返回有效数据")
 }
 
 func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {

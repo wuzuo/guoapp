@@ -53,7 +53,7 @@ func (downloader *Downloader) hongguoAppSearchTab(ctx context.Context, keyword s
 	}
 	searchCtx := context.WithValue(ctx, hongguoCookieKey{}, true)
 	// 搜索与弹幕用 App 版本（7.2.2.32 / 72232），与播放器版本区分，避免被按旧客户端处理。
-	searchCtx = context.WithValue(searchCtx, hongguoAppVersionKey{}, hongguoAppVersion{"72232", "7.2.2.32"})
+	searchCtx = context.WithValue(searchCtx, hongguoAppVersionKey{}, hongguoAppVersion{"72232", "7.1.3.32"})
 	var result map[string]any
 	var err error
 	// 100103 是间歇性错误（同一设备约一半概率），短间隔重试几次即可。

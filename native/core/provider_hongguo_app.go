@@ -17,11 +17,17 @@ import (
 
 const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
-const hongguoAppUserAgent = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+// 红果 App 请求的 User-Agent 按是否带请求体区分（对齐参考实现 hgtv-tv）：
+// 不带 body 的通用 App 接口（搜索/详情/目录/设备注册）用播放器 App 版 72232；
+// 带 body 的播放取流接口用播放内核版 71332，平台对该路径的版本更敏感。
+const hongguoAppUA = "com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)"
+
+const hongguoVideoUA = "com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
 // hongguoAppVersion 仅用于覆盖 App 接口的客户端版本号：
 // 搜索与弹幕用 App 版本（7.2.2.32 / 72232），播放与详情用播放器版本（7.3.5.32 / 73532）。
 // 混用会被平台按旧客户端处理，因此搜索在 ctx 里带上 App 版本。
+// 搜索/弹幕与默认取流统一用 App 版本（7.1.3.32 / 72232），避免被平台按旧客户端处理。
 type hongguoAppVersion struct{ code, name string }
 
 type hongguoAppVersionKey struct{}
@@ -173,8 +179,8 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		cookie = hongguoCookieHeader(cookies)
 	}
 	query := url.Values{
-		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"},
-		"manifest_version_code": {"73532"}, "update_version_code": {"73532"}, "channel": {"update_64"},
+		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"72232"}, "version_name": {"7.1.3.32"},
+		"manifest_version_code": {"72232"}, "update_version_code": {"72232"}, "channel": {"update_64"},
 		"device_platform": {"android"}, "os": {"android"}, "ssmix": {"a"}, "device_type": {"25053RT47C"},
 		"device_brand": {"Redmi"}, "language": {"zh"}, "os_api": {"36"}, "os_version": {"16"},
 		"resolution": {"1280*2772"}, "dpi": {"520"}, "ac": {"wifi"}, "device_id": {deviceID}, "iid": {installID},
@@ -216,8 +222,13 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		if err != nil {
 			return nil, err
 		}
-		request.Header.Set("User-Agent", hongguoAppUserAgent)
-		request.Header.Set("Accept", "application/json")
+			// 播放取流接口带请求体，用播放内核版 UA；其余 App 接口用通用 App 版 UA。
+			if payload != nil {
+				request.Header.Set("User-Agent", hongguoVideoUA)
+			} else {
+				request.Header.Set("User-Agent", hongguoAppUA)
+			}
+			request.Header.Set("Accept", "application/json")
 		request.Header.Set("X-XS-From-Web", "0")
 		request.Header.Set("Sdk-Version", "2")
 		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
