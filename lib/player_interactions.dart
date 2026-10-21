@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'player_keys.dart';
 import 'widgets.dart';
 
 class PlayerInteractions extends ChangeNotifier {
@@ -16,6 +17,8 @@ class PlayerInteractions extends ChangeNotifier {
     required this.onTogglePlayback,
     required this.onFullscreen,
     required this.onEpisode,
+    required this.keyMap,
+    required this.onSettings,
     this.onSeek,
   }) {
     _playing = player.stream.playing.listen((playing) {
@@ -29,6 +32,8 @@ class PlayerInteractions extends ChangeNotifier {
   final VoidCallback onTogglePlayback;
   final VoidCallback onFullscreen;
   final String Function(int direction) onEpisode;
+  final PlayerKeyMap Function() keyMap;
+  final VoidCallback onSettings;
   final Future<void> Function(Duration)? onSeek;
   late final StreamSubscription<bool> _playing;
   Timer? _holdTimer;
@@ -219,8 +224,9 @@ class PlayerInteractions extends ChangeNotifier {
 
   KeyEventResult key(KeyEvent event) {
     final key = event.logicalKey;
+    final mapped = PlayerKeyMap.keyOf(key);
     if (event is KeyUpEvent) {
-      if (key == LogicalKeyboardKey.arrowRight && _keyboardHold) {
+      if (mapped == PlayerKey.right && _keyboardHold) {
         _endHold(tap: available());
         return KeyEventResult.handled;
       }
@@ -243,27 +249,48 @@ class PlayerInteractions extends ChangeNotifier {
     if (hardware.isControlPressed || !available()) {
       return KeyEventResult.ignored;
     }
-    if (key != LogicalKeyboardKey.arrowRight) _endHold();
-    if (key == LogicalKeyboardKey.arrowRight) {
-      if (event is KeyDownEvent) _beginHold(keyboard: true);
-    } else if (key == LogicalKeyboardKey.arrowLeft) {
-      seek(-5);
-    } else if (key == LogicalKeyboardKey.arrowUp) {
-      changeVolume(5);
-    } else if (key == LogicalKeyboardKey.arrowDown) {
-      changeVolume(-5);
-    } else if (key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.mediaPlayPause) {
-      if (event is KeyDownEvent) onTogglePlayback();
-    } else if (key == LogicalKeyboardKey.keyM) {
-      if (event is KeyDownEvent) toggleMute();
-    } else if (key == LogicalKeyboardKey.mediaTrackNext ||
-        key == LogicalKeyboardKey.mediaTrackPrevious) {
-      if (event is KeyDownEvent) {
-        hint(onEpisode(key == LogicalKeyboardKey.mediaTrackNext ? 1 : -1));
+    if (mapped == null) {
+      if (key == LogicalKeyboardKey.space ||
+          key == LogicalKeyboardKey.mediaPlayPause) {
+        if (event is KeyDownEvent) onTogglePlayback();
+      } else if (key == LogicalKeyboardKey.keyM) {
+        if (event is KeyDownEvent) toggleMute();
+      } else if (key == LogicalKeyboardKey.mediaTrackNext ||
+          key == LogicalKeyboardKey.mediaTrackPrevious) {
+        if (event is KeyDownEvent) {
+          hint(onEpisode(key == LogicalKeyboardKey.mediaTrackNext ? 1 : -1));
+        }
+      } else {
+        return KeyEventResult.ignored;
       }
-    } else {
-      return KeyEventResult.ignored;
+      return KeyEventResult.handled;
+    }
+    final action = keyMap()[mapped];
+    if (action == PlayerKeyAction.none) return KeyEventResult.handled;
+    if (action != PlayerKeyAction.seekForward) _endHold();
+    if (action == PlayerKeyAction.seekForward) {
+      if (event is KeyDownEvent) _beginHold(keyboard: true);
+    } else if (action == PlayerKeyAction.seekBackward) {
+      seek(-5);
+    } else if (action == PlayerKeyAction.volumeUp) {
+      changeVolume(5);
+    } else if (action == PlayerKeyAction.volumeDown) {
+      changeVolume(-5);
+    } else if (action == PlayerKeyAction.playPause) {
+      if (event is KeyDownEvent) onTogglePlayback();
+    } else if (action == PlayerKeyAction.nextEpisode) {
+      if (event is KeyDownEvent) hint(onEpisode(1));
+    } else if (action == PlayerKeyAction.previousEpisode) {
+      if (event is KeyDownEvent) hint(onEpisode(-1));
+    } else if (action == PlayerKeyAction.toggleFullscreen) {
+      if (event is KeyDownEvent) {
+        cancel();
+        onFullscreen();
+      }
+    } else if (action == PlayerKeyAction.toggleMute) {
+      if (event is KeyDownEvent) toggleMute();
+    } else if (action == PlayerKeyAction.openSettings) {
+      if (event is KeyDownEvent) onSettings();
     }
     return KeyEventResult.handled;
   }

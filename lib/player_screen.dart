@@ -12,6 +12,7 @@ import 'app_layout.dart';
 import 'app_theme.dart';
 import 'core_bridge.dart';
 import 'danmaku_controller.dart';
+import 'detail_screen.dart';
 import 'danmaku_overlay.dart';
 import 'local_store.dart';
 import 'models.dart';
@@ -19,6 +20,7 @@ import 'playback_loader.dart';
 import 'playback_preloader.dart';
 import 'playback_recovery.dart';
 import 'playback_preferences.dart';
+import 'player_keys.dart';
 import 'player_controls.dart';
 import 'player_interactions.dart';
 import 'player_menu.dart';
@@ -97,6 +99,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _automaticFullscreenSuppressed = false;
   bool _panelOpen = false;
   bool _autoAdvance = true;
+  VideoFrameMode _frameMode = VideoFrameMode.contain;
+  bool _hardwareDecoding = true;
+  PlayerKeyMap _keyMap = const PlayerKeyMap();
+  bool _finished = false;
+  bool _upNextLoading = false;
+  bool _upNextRequested = false;
+  int _upNextGeneration = 0;
+  List<Drama> _upNext = const [];
   bool _seamlessAdvance = false;
   bool? _systemFullscreen;
   Orientation? _lastOrientation;
@@ -124,6 +134,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     autoAdvance: _autoAdvance,
     danmaku: _danmakuEnabled,
     preload: _preloadEnabled,
+    frameMode: _frameMode,
+    hardwareDecoding: _hardwareDecoding,
+    keyMap: _keyMap,
   );
   String get _qualityLabel => _plan?.local == true
       ? '本地原画'
@@ -148,6 +161,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     _autoAdvance = preferences.autoAdvance;
     _danmakuEnabled = preferences.danmaku;
     _preloadEnabled = preferences.preload;
+    _frameMode = preferences.frameMode;
+    _hardwareDecoding = preferences.hardwareDecoding;
+    _keyMap = preferences.keyMap;
     _loader = PlaybackLoader(widget.repository);
     _preloader = PlaybackPreloader(widget.repository);
     _danmaku = DanmakuController(widget.repository)
@@ -171,6 +187,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           _foreground &&
           !_panelOpen,
       baseSpeed: () => _speed,
+      keyMap: () => _keyMap,
+      onSettings: () => _openPanel(PlayerMenuSection.settings),
       onTogglePlayback: _togglePlayback,
       onSeek: _seekTo,
       onFullscreen: _rotate,
@@ -214,6 +232,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             _interactions.cancel();
             unawaited(_player.pause());
             unawaited(_saveProgress(flush: true));
+            if (_autoAdvance &&
+                _foreground &&
+                _index + 1 >= widget.detail.episodes.length) {
+              _finishPlayback();
+            }
           }
         }
       }),
@@ -690,6 +713,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     _interactions.cancel();
+    _upNextGeneration++;
+    if (_finished || _upNextLoading) {
+      setState(() {
+        _finished = false;
+        _upNextLoading = false;
+        _upNext = const [];
+      });
+    }
     if (widget.handoff != null &&
         handoffPlan == null &&
         recoveryAction == null) {
@@ -795,6 +826,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             ].join(','),
           );
           await platform.setProperty('network-timeout', '20');
+          await platform.setProperty(
+            'hwdec',
+            _hardwareDecoding ? 'auto-safe' : 'no',
+          );
         }
         _plan = plan;
         installed = true;
@@ -946,12 +981,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     await widget.store.setPlaybackPreferences(preferences);
     if (!mounted || _closed) return;
     final qualityChanged = preferences.quality != _requestedQuality;
+    final decodeChanged = preferences.hardwareDecoding != _hardwareDecoding;
     setState(() {
       _speed = preferences.speed;
       _requestedQuality = preferences.quality;
       _autoAdvance = preferences.autoAdvance;
       _danmakuEnabled = preferences.danmaku;
       _preloadEnabled = preferences.preload;
+      _frameMode = preferences.frameMode;
+      _hardwareDecoding = preferences.hardwareDecoding;
+      _keyMap = preferences.keyMap;
     });
     _danmaku.setEnabled(_danmakuEnabled);
     _syncDanmaku();
@@ -961,6 +1000,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     await _interactions.applySpeed();
     if (qualityChanged && _plan?.local != true) {
       await _retry(quality: preferences.quality);
+    } else if (decodeChanged) {
+      await _retry();
     }
   }
 
@@ -1000,6 +1041,11 @@ class _PlayerScreenState extends State<PlayerScreen>
               mobile: _mobile,
               onEpisode: (index) => Navigator.pop(menuContext, index),
               onPreferences: _setPreferences,
+              onEditKeys: () => showPlayerKeyMapDialog(
+                menuContext,
+                initial: _keyMap,
+                hardwareKeyboard: !_mobile,
+              ),
               showDanmaku: widget.detail.drama.source == 'hongguo',
               danmakuStatus: _danmaku.status,
               onRetryDanmaku: _danmaku.canRetry ? _danmaku.retry : null,
@@ -1137,6 +1183,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveTimer?.cancel();
     _healthTimer?.cancel();
     _errorTimer?.cancel();
+    _upNextGeneration++;
+    if (_upNextRequested) {
+      _upNextRequested = false;
+      unawaited(widget.repository.cancelRecommendations());
+    }
     _interactions.dispose();
     _playerFocus.dispose();
     _menuRevision.dispose();
@@ -1275,6 +1326,162 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  void _finishPlayback() {
+    if (_closed || _finished) return;
+    setState(() => _finished = true);
+    unawaited(_loadUpNext());
+  }
+
+  Future<void> _loadUpNext() async {
+    if (_closed) return;
+    final generation = ++_upNextGeneration;
+    setState(() {
+      _upNextLoading = true;
+    });
+    final items = <Drama>[];
+    final seen = <String>{widget.detail.drama.id};
+    void add(Iterable<Drama> dramas) {
+      for (final drama in dramas) {
+        if (items.length >= 6 || !seen.add(drama.id)) continue;
+        if (!widget.store.allowsSource(drama.source)) continue;
+        items.add(drama);
+      }
+    }
+
+    try {
+      if (widget.detail.drama.source == 'hongguo') {
+        _upNextRequested = true;
+        final page = await widget.repository.recommendations('short_play');
+        if (!_closed && generation == _upNextGeneration) add(page.items);
+      }
+    } catch (_) {}
+    for (final entry in widget.store.history) {
+      if (items.length >= 6) break;
+      add([entry.drama]);
+    }
+    if (_closed || generation != _upNextGeneration) return;
+    setState(() {
+      _upNextLoading = false;
+      _upNext = items;
+    });
+  }
+
+  Future<void> _openNextDrama(Drama drama) async {
+    if (_closed) return;
+    if (_showFullscreen) await _rotate();
+    if (!mounted || _closed) return;
+    setState(() => _finished = false);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DetailScreen(
+          drama: drama,
+          repository: widget.repository,
+          store: widget.store,
+          resumeOnOpen: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _upNextPanel() => Positioned(
+    left: 0,
+    right: 0,
+    bottom: 0,
+    child: SafeArea(
+      top: false,
+      child: Material(
+        color: const Color(0xF018191D),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 18,
+                    color: Color(0xFFF6C86B),
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '本剧已播完 · 推荐下一部',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  TextButton(
+                    key: const ValueKey('player-upnext-close'),
+                    onPressed: () => setState(() => _finished = false),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+              if (_upNextLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: LinearProgressIndicator(minHeight: 2),
+                )
+              else if (_upNext.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 2, bottom: 8),
+                  child: Text(
+                    '暂时没有可推荐的剧集，可以返回追剧或换个站源。',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 154,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _upNext.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) {
+                      final drama = _upNext[index];
+                      return SizedBox(
+                        width: 88,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => _openNextDrama(drama),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: AspectRatio(
+                                  aspectRatio: 2 / 3,
+                                  child: DramaCover(
+                                    drama: drama,
+                                    repository: widget.repository,
+                                    radius: 8,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                drama.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
   Widget _videoPane(BuildContext context) {
     final title =
         '${widget.detail.drama.title} · 第 ${widget.detail.episodes[_index].number} 集${_plan?.local == true ? ' · 本地' : ''}${widget.detail.episodes[_index].vip ? ' · VIP 试看' : ''}${(_plan?.routeIndex ?? 0) > 0 ? ' · 线路 ${_plan!.routeIndex + 1}' : ''}';
@@ -1335,7 +1542,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         else
           Video(
             controller: _video!,
-            fit: BoxFit.contain,
+            fit: _frameMode.fit,
             controls: (_) => layeredControls,
           ),
         if (_loading)
@@ -1429,6 +1636,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ),
           ),
+        if (_finished && !_panelOpen) _upNextPanel(),
       ],
     );
   }

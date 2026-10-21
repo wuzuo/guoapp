@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 import 'episode_browser.dart';
 import 'playback_preferences.dart';
+import 'player_keys.dart';
 
 enum PlayerMenuSection { episodes, speed, quality, settings }
 
@@ -23,6 +24,7 @@ class PlayerMenu extends StatefulWidget {
     required this.onEpisode,
     required this.onPreferences,
     required this.onFavorite,
+    this.onEditKeys,
     this.showDanmaku = false,
     this.danmakuStatus = '',
     this.onRetryDanmaku,
@@ -45,6 +47,7 @@ class PlayerMenu extends StatefulWidget {
   final ValueChanged<int> onEpisode;
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
+  final Future<PlayerKeyMap?> Function()? onEditKeys;
 
   @override
   State<PlayerMenu> createState() => _PlayerMenuState();
@@ -213,6 +216,73 @@ class _PlayerMenuState extends State<PlayerMenu> {
             ),
           const SizedBox(height: 20),
         ],
+        if (all) ...[
+          const Text('画面模式'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final mode in VideoFrameMode.values)
+                ChoiceChip(
+                  key: ValueKey('menu-frame-${mode.name}'),
+                  label: Text(mode.label),
+                  selected: mode == preferences.frameMode,
+                  onSelected: _busy
+                      ? null
+                      : (_) => _run(
+                          () => widget.onPreferences(
+                            preferences.copyWith(frameMode: mode),
+                          ),
+                        ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            preferences.frameMode.hint,
+            style: const TextStyle(fontSize: 13, color: Colors.white70),
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (all) ...[
+          SwitchListTile.adaptive(
+            key: const ValueKey('player-hardware-decoding'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('硬件解码'),
+            subtitle: const Text('关闭后使用软件解码，适合花屏、绿屏或音画不同步'),
+            value: preferences.hardwareDecoding,
+            onChanged: _busy
+                ? null
+                : (value) => _run(
+                    () => widget.onPreferences(
+                      preferences.copyWith(hardwareDecoding: value),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 4),
+          OutlinedButton.icon(
+            key: const ValueKey('player-keys'),
+            onPressed: _busy || widget.onEditKeys == null
+                ? null
+                : () async {
+                    final keys = await widget.onEditKeys!();
+                    if (keys == null) return;
+                    await _run(
+                      () => widget.onPreferences(
+                        preferences.copyWith(keyMap: keys),
+                      ),
+                    );
+                  },
+            icon: const Icon(Icons.keyboard_alt_outlined),
+            label: Text(
+              preferences.keyMap.isDefault
+                  ? '播放按键 · 默认'
+                  : '播放按键 · 已改 ${preferences.keyMap.customized} 项',
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
         if (all && widget.showDanmaku) ...[
           SwitchListTile.adaptive(
             key: const ValueKey('player-danmaku-enabled'),
@@ -282,7 +352,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           Text(
             widget.mobile
                 ? '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。'
-                : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 3 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
+                : '方向键与确定键按上面的按键设置执行；空格仍是播放 / 暂停，M 静音，F、F11、Ctrl+F 全屏，Esc 先关闭菜单再退出全屏。',
             style: const TextStyle(
               fontSize: 13,
               color: Colors.white70,
