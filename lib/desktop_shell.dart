@@ -26,12 +26,9 @@ class _DesktopWindowFrameState extends State<DesktopWindowFrame>
   void initState() {
     super.initState();
     windowManager.addListener(this);
-    windowManager
-        .isMaximized()
-        .catchError((Object _) => false)
-        .then((value) {
-          if (mounted && value != _maximized) setState(() => _maximized = value);
-        });
+    windowManager.isMaximized().catchError((Object _) => false).then((value) {
+      if (mounted && value != _maximized) setState(() => _maximized = value);
+    });
   }
 
   @override
