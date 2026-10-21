@@ -85,8 +85,8 @@ func TestHongguoDanmakuCacheAndConcurrentRequests(t *testing.T) {
 	d := rankingTestDownloader(t, func(request *http.Request) (*http.Response, error) {
 		count := calls.Add(1)
 		if request.URL.Path == "/novel/player/video_detail/v1/" {
-			if request.Header.Get("X-Argus") != "" || request.Header.Get("X-Ladon") != "" || request.Header.Get("Comment-Source") != "" {
-				t.Error("comment signatures leaked into the regular player request")
+			if request.Header.Get("Comment-Source") != "" {
+				t.Error("comment-only headers leaked into the regular player request")
 			}
 			return rankingHTTPResponse(request, 200, `{"code":0}`), nil
 		}

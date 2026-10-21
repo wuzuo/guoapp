@@ -8,8 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strconv"
+		"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -178,21 +177,31 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	if withCookie, _ := ctx.Value(hongguoCookieKey{}).(bool); withCookie && registered {
 		cookie = hongguoCookieHeader(cookies)
 	}
-	query := url.Values{
-		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"72232"}, "version_name": {"7.1.3.32"},
-		"manifest_version_code": {"72232"}, "update_version_code": {"72232"}, "channel": {"update_64"},
-		"device_platform": {"android"}, "os": {"android"}, "ssmix": {"a"}, "device_type": {"25053RT47C"},
-		"device_brand": {"Redmi"}, "language": {"zh"}, "os_api": {"36"}, "os_version": {"16"},
-		"resolution": {"1280*2772"}, "dpi": {"520"}, "ac": {"wifi"}, "device_id": {deviceID}, "iid": {installID},
+	// 设备参数档案：播放接口走 71332（与参考 deviceProfile 对齐），其余 App 接口走 72232（appValues）。
+	versionCode, versionName := "72232", "7.2.2.32"
+	if strings.Contains(path, "/player/") {
+		versionCode, versionName = "71332", "7.1.3.32"
 	}
+	if v, ok := ctx.Value(hongguoAppVersionKey{}).(hongguoAppVersion); ok && v.code != "" {
+		versionCode, versionName = v.code, v.name
+	}
+	profile := hgDeviceQuery(deviceID, installID, versionCode, versionName)
 	for key, values := range extra {
-		query[key] = append([]string(nil), values...)
-	}
-	if version, ok := ctx.Value(hongguoAppVersionKey{}).(hongguoAppVersion); ok && version.code != "" {
-		query.Set("version_code", version.code)
-		query.Set("manifest_version_code", version.code)
-		query.Set("update_version_code", version.code)
-		query.Set("version_name", version.name)
+		if len(values) == 0 {
+			continue
+		}
+		val := values[0]
+		replaced := false
+		for i := range profile {
+			if profile[i][0] == key {
+				profile[i][1] = val
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			profile = append(profile, [2]string{key, val})
+		}
 	}
 	var body []byte
 	var err error
@@ -202,6 +211,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			return nil, err
 		}
 	}
+	isVideo := payload != nil
 	attempts := downloader.cfg.Retries
 	if attempts < 1 {
 		attempts = 1
@@ -222,36 +232,23 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		if err != nil {
 			return nil, err
 		}
-			// 播放取流接口带请求体，用播放内核版 UA；其余 App 接口用通用 App 版 UA。
-			if payload != nil {
-				request.Header.Set("User-Agent", hongguoVideoUA)
-			} else {
-				request.Header.Set("User-Agent", hongguoAppUA)
-			}
-			request.Header.Set("Accept", "application/json")
-		request.Header.Set("X-XS-From-Web", "0")
-		request.Header.Set("Sdk-Version", "2")
 		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
-		var commentNonce hongguoCommentNonce
-		if comment {
-			commentNonce, err = newHongguoCommentNonce()
-			if err != nil {
-				return nil, errors.New("无法准备红果文字请求")
-			}
-			request.Header.Set("Comment-Source", "601")
-			request.Header.Set("Server-Channel", "1000")
-		}
-		if payload != nil {
-			request.Header.Set("Content-Type", "application/json; charset=utf-8")
-		}
 		response, err := downloader.doPreparedCatalogRequest(request, 20*time.Second, func(prepared *http.Request) {
-			now := time.Now()
-			query.Set("_rticket", strconv.FormatInt(now.UnixMilli(), 10))
-			prepared.URL.RawQuery = query.Encode()
+			signedURL, headers, sErr := hgSignRequest(base, path, profile, body, isVideo, deviceID, versionName)
+			if sErr != nil {
+				err = sErr
+				return
+			}
+			if u, perr := url.Parse(signedURL); perr == nil {
+				prepared.URL = u
+				prepared.Host = u.Host
+			}
+			for k, v := range headers {
+				prepared.Header.Set(k, v)
+			}
 			if comment {
-				signHongguoCommentRequest(prepared, commentNonce, now)
-			} else {
-				signHongguoRequest(prepared, body, now)
+				prepared.Header.Set("Comment-Source", "601")
+				prepared.Header.Set("Server-Channel", "1000")
 			}
 			if cookie != "" {
 				prepared.Header.Set("Cookie", cookie)
