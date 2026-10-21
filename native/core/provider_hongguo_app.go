@@ -19,6 +19,13 @@ const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
 const hongguoAppUserAgent = "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
+// hongguoAppVersion 仅用于覆盖 App 接口的客户端版本号：
+// 搜索与弹幕用 App 版本（7.2.2.32 / 72232），播放与详情用播放器版本（7.3.5.32 / 73532）。
+// 混用会被平台按旧客户端处理，因此搜索在 ctx 里带上 App 版本。
+type hongguoAppVersion struct{ code, name string }
+
+type hongguoAppVersionKey struct{}
+
 type hongguoCatalogCursor struct {
 	Offset        int       `json:"offset"`
 	SessionID     string    `json:"sessionId,omitempty"`
@@ -174,6 +181,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	}
 	for key, values := range extra {
 		query[key] = append([]string(nil), values...)
+	}
+	if version, ok := ctx.Value(hongguoAppVersionKey{}).(hongguoAppVersion); ok && version.code != "" {
+		query.Set("version_code", version.code)
+		query.Set("manifest_version_code", version.code)
+		query.Set("update_version_code", version.code)
+		query.Set("version_name", version.name)
 	}
 	var body []byte
 	var err error

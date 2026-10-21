@@ -198,8 +198,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	// App 签名直连优先：multi_video_model/preload/v1 是当前唯一稳定可用的红果取流方式
-	// （站点改版后网页不再暴露 main_url，旧 /novel/player/video_model/v1/ 会被网关静默返回空体）。
+	// App 签名直连优先：POST /novel/player/video_model/v1/（video_id 单值，需设备注册）。
 	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
 	if nativeErr == nil {
 		return media, nil
@@ -215,12 +214,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
-	// 第三方代理兜底。
-	media, apiErr := d.resolveHongguoPlaybackAPI(ctx, seriesID, videoID)
-	if apiErr == nil {
-		return media, nil
-	}
-	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(pageErr), apiErr)
+	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v；网页取流失败：%v", publicError(nativeErr), publicError(pageErr))
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {

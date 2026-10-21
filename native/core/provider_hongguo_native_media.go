@@ -17,11 +17,12 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
 	ctx = context.WithValue(ctx, hongguoCookieKey{}, true)
-	// 红果取播放地址接口自 2026-10 起仅 multi_video_model/preload/v1 可用：
-	// 旧的 /novel/player/video_model/v1/（顶层 video_id + video_platform=3）会被网关静默返回空体。
-	// 这里对齐 hgtv-tv 的 videoModels：preload 入口 + video_platform=1024 +
-	// mixed_video_id_map（键固定为 "1"）+ 端内原生 X-Gorgon 签名，返回 video_model（含 video_list 与 spade_a）。
+	// 红果取播放地址接口（2026-10-14 起）：POST /novel/player/video_model/v1/，
+	// 请求体为 video_id 单值 + biz_param；biz_param 带上才返回完整 5 档清晰度。
+	// 未注册设备会回 101000，注册设备（见 provider_hongguo_device.go）回 code 0；
+	// 空响应体也按失败处理，交由 resolveHongguoMedia 的网页兜底继续。
 	payload := map[string]any{
+		"video_id": videoID,
 		"biz_param": map[string]any{
 			"detail_page_version":       0,
 			"device_level":              3,
@@ -33,29 +34,16 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 			"use_server_dns":            false,
 			"video_platform":            1024,
 		},
-		"dr_scene":           "preload",
-		"mixed_video_id_map": map[string]any{"1": []any{videoID}},
 	}
-	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/multi_video_model/preload/v1/", nil, payload)
+	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/video_model/v1/", nil, payload)
 	if err != nil {
 		return providerMedia{}, err
 	}
 	data := nestedMap(result, "data")
-	// 响应结构为 data.{videoID}.video_model（video_model 可能是 JSON 字符串）。
-	entry := nestedMap(data, videoID)
-	if len(entry) == 0 {
-		for _, v := range data {
-			if m, ok := v.(map[string]any); ok && len(m) > 0 {
-				entry = m
-				break
-			}
-		}
-	}
-	if len(entry) == 0 {
-		return providerMedia{}, errors.New("红果 App 未返回该集播放信息")
-	}
+	// 响应结构为 data.video_model（可能是 JSON 字符串），其内 video_list 为数组，
+	// 元素含 video_meta / encrypt_info.spade_a / main_url / backup_url。
 	var model map[string]any
-	switch v := entry["video_model"].(type) {
+	switch v := data["video_model"].(type) {
 	case map[string]any:
 		model = v
 	case string:

@@ -158,7 +158,7 @@ func (downloader *Downloader) fetchHongguoSearch(ctx context.Context, keyword st
 	reportHongguoSearchProgress(ctx, hongguoSearchEntry{Dramas: mergeHongguoSearchDramas([]Drama{}, names), Limited: true})
 	pageCtx, cancel := context.WithTimeout(ctx, hongguoSearchPageTimeout)
 	defer cancel()
-	page, pageErr := downloader.fetchHongguoSearchPage(pageCtx, keyword)
+	page, pageErr := downloader.fetchHongguoSearchResults(pageCtx, keyword)
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return hongguoSearchEntry{}, ctx.Err()
 	}
