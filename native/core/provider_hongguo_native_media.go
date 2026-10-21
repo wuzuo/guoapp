@@ -16,6 +16,7 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
+	ctx = context.WithValue(ctx, hongguoCookieKey{}, true)
 	// 红果取播放地址接口自 2026-10 起仅 multi_video_model/preload/v1 可用：
 	// 旧的 /novel/player/video_model/v1/（顶层 video_id + video_platform=3）会被网关静默返回空体。
 	// 这里对齐 hgtv-tv 的 videoModels：preload 入口 + video_platform=1024 +

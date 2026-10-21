@@ -54,6 +54,7 @@ func (downloader *Downloader) fetchHongguoAppCatalogCategory(ctx context.Context
 	client := downloader.hongguoClient()
 	client.catalogMu.Lock()
 	defer client.catalogMu.Unlock()
+	_ = downloader.ensureHongguoDevice(ctx)
 	more, _ := ctx.Value(libraryMoreKey{}).(bool)
 	update, _ := ctx.Value(libraryUpdateKey{}).(bool)
 	known, _ := ctx.Value(libraryKnownKey{}).(map[string]bool)

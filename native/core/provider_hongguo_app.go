@@ -30,10 +30,13 @@ type hongguoCatalogCursor struct {
 }
 
 type hongguoCatalogState struct {
-	Version   int                             `json:"version"`
-	DeviceID  string                          `json:"deviceId"`
-	InstallID string                          `json:"installId"`
-	Feeds     map[string]hongguoCatalogCursor `json:"feeds"`
+	Version     int                             `json:"version"`
+	DeviceID    string                          `json:"deviceId"`
+	InstallID   string                          `json:"installId"`
+	Registered  bool                            `json:"registered,omitempty"`
+	DeviceToken string                          `json:"deviceToken,omitempty"`
+	Cookies     map[string]string               `json:"cookies,omitempty"`
+	Feeds       map[string]hongguoCatalogCursor `json:"feeds"`
 }
 
 type hongguoAppClient struct {
@@ -49,6 +52,11 @@ type hongguoAppClient struct {
 	suggestPending map[string]*hongguoSuggestionCall
 	danmaku        map[string]hongguoDanmakuCacheEntry
 	danmakuPending map[string]*hongguoDanmakuCall
+
+	registering  bool
+	registerDone chan struct{}
+	registerAt   time.Time
+	registerErr  error
 }
 
 func (downloader *Downloader) hongguoClient() *hongguoAppClient {
@@ -73,6 +81,12 @@ func cloneHongguoCatalogState(state *hongguoCatalogState) *hongguoCatalogState {
 	for name, cursor := range state.Feeds {
 		cloned.Feeds[name] = cursor
 	}
+	if state.Cookies != nil {
+		cloned.Cookies = make(map[string]string, len(state.Cookies))
+		for name, value := range state.Cookies {
+			cloned.Cookies[name] = value
+		}
+	}
 	return &cloned
 }
 
@@ -81,6 +95,19 @@ func (downloader *Downloader) restoreHongguoCatalog(state *hongguoCatalogState) 
 		return
 	}
 	cloned := cloneHongguoCatalogState(state)
+	if !cloned.Registered || !hongguoNumericID.MatchString(cloned.DeviceID) || !hongguoNumericID.MatchString(cloned.InstallID) {
+		cloned.Registered = false
+		cloned.DeviceToken = ""
+		cloned.Cookies = nil
+	}
+	if len(cloned.Cookies) > 16 {
+		cloned.Cookies = nil
+	}
+	for name, value := range cloned.Cookies {
+		if len(name) > 64 || len(value) > 512 {
+			delete(cloned.Cookies, name)
+		}
+	}
 	for name, cursor := range cloned.Feeds {
 		known := false
 		for _, genre := range hongguoAppGenres {
@@ -128,10 +155,16 @@ func hongguoCatalogHasMore(state *hongguoCatalogState) bool {
 }
 
 func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {
+	_ = downloader.ensureHongguoDevice(ctx)
 	client := downloader.hongguoClient()
 	client.mu.Lock()
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID
+	registered, cookies := client.state.Registered, client.state.Cookies
 	client.mu.Unlock()
+	cookie := ""
+	if withCookie, _ := ctx.Value(hongguoCookieKey{}).(bool); withCookie && registered {
+		cookie = hongguoCookieHeader(cookies)
+	}
 	query := url.Values{
 		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"},
 		"manifest_version_code": {"73532"}, "update_version_code": {"73532"}, "channel": {"update_64"},
@@ -195,6 +228,9 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 				signHongguoCommentRequest(prepared, commentNonce, now)
 			} else {
 				signHongguoRequest(prepared, body, now)
+			}
+			if cookie != "" {
+				prepared.Header.Set("Cookie", cookie)
 			}
 		})
 		if err != nil {

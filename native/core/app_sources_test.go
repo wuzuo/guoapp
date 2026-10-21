@@ -25,10 +25,35 @@ func sourceFixtureResponse(request *http.Request, status int, body string) *http
 	return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), ContentLength: int64(len(body)), Request: request}
 }
 
+const deviceRegisterPath = "/service/2/device_register/"
+
+func deviceRegisterFixture(request *http.Request) (*http.Response, bool) {
+	if !strings.HasSuffix(request.URL.Path, deviceRegisterPath) {
+		return nil, false
+	}
+	response := sourceFixtureResponse(request, http.StatusOK,
+		`{"device_id":7111111111111111111,"install_id":7222222222222222222,"device_token":"fixture","new_user":1}`)
+	response.Header.Add("Set-Cookie", "install_id=7222222222222222222; Path=/")
+	response.Header.Add("Set-Cookie", "ttreq=1.fixture; Path=/")
+	return response, true
+}
+
+func withDeviceRegister(transport sourceFixtureTransport) sourceFixtureTransport {
+	if transport == nil {
+		return nil
+	}
+	return func(request *http.Request) (*http.Response, error) {
+		if response, ok := deviceRegisterFixture(request); ok {
+			return response, nil
+		}
+		return transport(request)
+	}
+}
+
 func sourceFixtureDownloader(t *testing.T, transport sourceFixtureTransport) *Downloader {
 	t.Helper()
 	return &Downloader{cfg: Config{dataDir: t.TempDir(), Retries: 1, PageSize: 30, MaxPagesPerSort: 1},
-		client: &http.Client{Transport: transport}, limiter: newRequestLimiter(3, 0), providerHosts: map[string]string{}}
+		client: &http.Client{Transport: withDeviceRegister(transport)}, limiter: newRequestLimiter(3, 0), providerHosts: map[string]string{}}
 }
 
 func sourceFixtureEngine(t *testing.T, transport sourceFixtureTransport) *nativeEngine {
@@ -38,7 +63,7 @@ func sourceFixtureEngine(t *testing.T, transport sourceFixtureTransport) *native
 		t.Fatal(err)
 	}
 	t.Cleanup(engine.downloads.close)
-	engine.downloader.client.Transport = transport
+	engine.downloader.client.Transport = withDeviceRegister(transport)
 	engine.downloader.limiter = newRequestLimiter(3, 0)
 	engine.downloader.cfg.Retries = 1
 	return engine
