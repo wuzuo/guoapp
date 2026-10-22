@@ -16,6 +16,15 @@ import (
 
 const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
+// 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
+var hongguoCommentHosts = []string{
+	"https://api5-normal-sinfonlinea.fqnovel.com",
+	"https://api5-normal-sinfonlinec.fqnovel.com",
+	"https://api5-normal-lf.fqnovel.com",
+	"https://api5-normal-lq.fqnovel.com",
+	"https://api5-normal-hl.fqnovel.com",
+}
+
 // 红果 App 请求的 User-Agent 按是否带请求体区分（对齐参考实现 hgtv-tv）：
 // 不带 body 的通用 App 接口（搜索/详情/目录/设备注册）用播放器 App 版 72232；
 // 带 body 的播放取流接口用播放内核版 71332，平台对该路径的版本更敏感。
@@ -213,6 +222,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	}
 	// 视频 UA 仅用于 /player/ 播放路径；弹幕等带 body 的 App 接口用 App UA（与版本 72232 一致，对齐参考实现 appValues）。
 	isVideo := strings.Contains(path, "/player/")
+	// 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
+	comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
+	hosts := []string{base}
+	if comment {
+		hosts = append([]string{base}, hongguoCommentHosts...)
+	}
 	attempts := downloader.cfg.Retries
 	if attempts < 1 {
 		attempts = 1
@@ -220,22 +235,29 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	if attempts > 3 {
 		attempts = 3
 	}
+	if comment && len(hosts) > attempts {
+		attempts = len(hosts)
+	}
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
+		hostBase := hosts[attempt%len(hosts)]
 		if attempt > 0 {
+			delay := time.Duration(attempt) * time.Second
+			if comment {
+				delay = 300 * time.Millisecond
+			}
 			select {
-			case <-time.After(time.Duration(attempt) * time.Second):
+			case <-time.After(delay):
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
 		}
-		request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(base, "/")+path, bytes.NewReader(body))
+		request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(hostBase, "/")+path, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
-		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
 		response, err := downloader.doPreparedCatalogRequest(request, 20*time.Second, func(prepared *http.Request) {
-			signedURL, headers, sErr := hgSignRequest(base, path, profile, body, isVideo, deviceID, versionName)
+			signedURL, headers, sErr := hgSignRequest(hostBase, path, profile, body, isVideo, deviceID, versionName)
 			if sErr != nil {
 				err = sErr
 				return

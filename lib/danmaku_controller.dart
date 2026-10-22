@@ -24,6 +24,7 @@ class DanmakuController extends ChangeNotifier {
   bool _playing = false;
   bool _buffering = false;
   bool _seeking = false;
+  String? _lastError;
   int positionMs = 0;
   int durationMs = 0;
   double rate = 1;
@@ -56,7 +57,7 @@ class DanmakuController extends ChangeNotifier {
     if (!_enabled) return '弹幕已关闭';
     if (_plan?.local == true) return '本地播放不加载弹幕';
     if (_plan != null && !supported) return '本集暂不支持弹幕';
-    if (canRetry) return '弹幕暂不可用，可重试';
+    if (canRetry) return _lastError == null ? '弹幕暂不可用，可重试' : '弹幕暂不可用：$_lastError';
     if (loading && _pages.isEmpty) return '正在加载弹幕';
     if (_pages.isNotEmpty) {
       return items.isEmpty ? '这段暂无弹幕' : '已载入 ${items.length} 条弹幕';
@@ -170,6 +171,7 @@ class DanmakuController extends ChangeNotifier {
   void retry() {
     if (_closed || !visible) return;
     _failures.clear();
+    _lastError = null;
     _ensureWindow();
     notifyListeners();
   }
@@ -254,7 +256,8 @@ class DanmakuController extends ChangeNotifier {
         _pages.remove(key);
       }
       _rebuildItems();
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString();
       if (_closed || ticket != _generation) return;
       _failures[start] = _now().add(const Duration(seconds: 15));
       while (_failures.length > 8) {

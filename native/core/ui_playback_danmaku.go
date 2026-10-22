@@ -126,7 +126,8 @@ func cloneDanmakuPage(page hongguoDanmakuPage) hongguoDanmakuPage {
 func parseHongguoDanmaku(result map[string]any, videoID string, start, duration int64) (hongguoDanmakuPage, error) {
 	data := nestedMap(result, "data")
 	rows, valid := data["data_list"].([]any)
-	next, err := strconv.ParseInt(mapString(nestedMap(data, "extra"), "next_query_danmaku_list_time"), 10, 64)
+	nextRaw := mapString(nestedMap(data, "extra"), "next_query_danmaku_list_time")
+	next, err := strconv.ParseInt(strings.SplitN(nextRaw, ".", 2)[0], 10, 64)
 	if !valid || err != nil || next <= start || next > danmakuMaxDurationMS {
 		return hongguoDanmakuPage{}, errors.New("红果弹幕时间段格式无效")
 	}
