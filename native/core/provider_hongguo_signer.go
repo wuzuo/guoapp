@@ -181,7 +181,7 @@ func hgHashF13(query, body []byte, ts int) []byte {
 	count := ivV1 + int32(ts)
 	tt := make([]uint32, len(hgHashTable))
 	for i, h := range hgHashTable {
-		tt[i] = bits.RotateLeft32(h, int((count+1)&255))
+		tt[i] = bits.RotateLeft32(h, -int((count+1)&255))
 	}
 	shift := int((count + 2) & 7)
 	padVals := []int{0xfa, 0x45, 0x61, 0xd7}
@@ -194,14 +194,14 @@ func hgHashF13(query, body []byte, ts int) []byte {
 	data = append(data, hgHex("00000000000001a0")...)
 	di := make([]uint32, 0, len(data)/4+112)
 	for i := 0; i+4 <= len(data); i += 4 {
-		di = append(di, binary.LittleEndian.Uint32(data[i:]))
+		di = append(di, binary.BigEndian.Uint32(data[i:]))
 	}
 	for i := 0; i < 112; i++ {
 		x := di[i+1]
 		y := di[i+14]
 		di = append(di, di[i]+di[i+9]+(bits.RotateLeft32(x,14)^bits.RotateLeft32(x,25)^(x>>3))+(bits.RotateLeft32(y,13)^bits.RotateLeft32(y,15)^(y>>10)))
 	}
-	rawInitial := []uint32{0x7aba4fc8, 0x67166507, 0x6403fa00, 0x340f512f, 0x3aa0b6b0, 0xb2f083fa, 0xab3d3f6d, 0x8036c890}
+	rawInitial := []uint32{0x7aba4fc8, 0x67166507, 0x6403fa00, 0x340f512f, 0x3aab4d10, 0xb31d643a, 0xab4fabed, 0x804b3850}
 	initial := make([]uint32, len(rawInitial))
 	for i, h := range rawInitial {
 		initial[i] = bits.RotateLeft32(h, -int(count))
@@ -264,7 +264,7 @@ func hgGorgon(queryStr string, body []byte, ts int, random int) string {
 	j := 0
 	for i := 0; i <= 255; i++ {
 		j = (j + s[i] + int(key[i%8])) & 255
-		s[i], s[j] = s[j], s[i]
+		s[i] = s[j]
 	}
 	j = 0
 	out := make([]byte, len(input))
@@ -647,7 +647,7 @@ func hgEncodeValue(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' {
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' || c == '*' {
 			b.WriteByte(c)
 		} else {
 			b.WriteString(fmt.Sprintf("%%%02X", c))

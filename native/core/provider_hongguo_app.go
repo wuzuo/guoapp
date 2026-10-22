@@ -321,6 +321,10 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		}
 		code := firstNonEmpty(mapString(result, "code", "Code", "status_code"), mapString(nestedMap(result, "BaseResp"), "StatusCode"))
 		if code != "" && code != "0" {
+			message := firstNonEmpty(mapString(result, "message", "msg", "Message", "status_msg"), mapString(nestedMap(result, "BaseResp"), "StatusMessage"))
+			if message != "" {
+				return nil, fmt.Errorf("红果 App 接口暂不可用（%s：%s）", truncate(code, 20), truncate(message, 120))
+			}
 			return nil, fmt.Errorf("红果 App 接口暂不可用（%s）", truncate(code, 20))
 		}
 		return result, nil
