@@ -88,8 +88,6 @@ func (d *Downloader) hongguoDanmaku(ctx context.Context, seriesID, videoID strin
 	client.mu.Unlock()
 	ctx = context.WithValue(ctx, backgroundCatalogKey{}, true)
 	ctx = context.WithValue(ctx, hongguoCommentKey{}, true)
-	// 评论/弹幕接口需要设备注册 Cookie（与播放取流一致，对齐参考实现全局 CookieJar）。
-	ctx = context.WithValue(ctx, hongguoCookieKey{}, true)
 	body := map[string]any{
 		"comment_source": 601, "server_channel": 1000, "group_id": videoID, "group_type": 30,
 		"comment_type": 20, "sort": 1, "count": 90, "cursor": "", "aid": 8662, "compliance_status": 0,

@@ -719,6 +719,7 @@ func hgSignRequest(base, path string, profile [][2]string, body []byte, isVideo 
 	headers := map[string]string{
 		"User-Agent":             hgUA(isVideo),
 		"Accept":                 "application/json; charset=utf-8,application/x-protobuf",
+		"Accept-Language":        "zh-CN,zh;q=0.9",
 		"x-ss-req-ticket":        strconv.FormatInt(ticket, 10),
 		"x-tt-request-tag":       "t=0;n=0",
 		"sdk-version":            "2",

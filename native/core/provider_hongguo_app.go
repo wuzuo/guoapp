@@ -32,6 +32,11 @@ const hongguoAppUA = "com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053
 
 const hongguoVideoUA = "com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
+// hongguoDeviceVersionName 是 x-medusa 上报的设备档案版本（VendorConstants.device 的 version_name），
+// 与请求 query 的客户端版本解耦：弹幕/搜索的 query 用 7.2.2.32，但 x-medusa 仍须用设备档案的 7.1.3.32，
+// 否则平台按「异常客户端」拒绝（弹幕表现为 110001）。
+const hongguoDeviceVersionName = "7.1.3.32"
+
 // hongguoAppVersion 仅用于覆盖 App 接口的客户端版本号：
 // 搜索与弹幕用 App 版本（7.2.2.32 / 72232），播放与详情用播放器版本（7.3.5.32 / 73532）。
 // 混用会被平台按旧客户端处理，因此搜索在 ctx 里带上 App 版本。
@@ -182,9 +187,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID
 	registered, cookies := client.state.Registered, client.state.Cookies
 	client.mu.Unlock()
+	// 评论/弹幕接口与参考 commentWindow 一致：匿名请求，不带设备注册 Cookie（withSession 不应用于评论）。
 	cookie := ""
-	if withCookie, _ := ctx.Value(hongguoCookieKey{}).(bool); withCookie && registered {
-		cookie = hongguoCookieHeader(cookies)
+	if isComment, _ := ctx.Value(hongguoCommentKey{}).(bool); !isComment {
+		if withCookie, _ := ctx.Value(hongguoCookieKey{}).(bool); withCookie && registered {
+			cookie = hongguoCookieHeader(cookies)
+		}
 	}
 	// 设备参数档案：播放接口走 71332（与参考 deviceProfile 对齐），其余 App 接口走 72232（appValues）。
 	versionCode, versionName := "72232", "7.2.2.32"
@@ -259,7 +267,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			return nil, err
 		}
 		response, err := downloader.doPreparedCatalogRequest(request, 20*time.Second, func(prepared *http.Request) {
-			signedURL, headers, sErr := hgSignRequest(hostBase, path, profile, body, isVideo, deviceID, versionName)
+			signedURL, headers, sErr := hgSignRequest(hostBase, path, profile, body, isVideo, deviceID, hongguoDeviceVersionName)
 			if sErr != nil {
 				err = sErr
 				return
