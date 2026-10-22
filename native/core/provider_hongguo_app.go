@@ -211,7 +211,8 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			return nil, err
 		}
 	}
-	isVideo := payload != nil
+	// 视频 UA 仅用于 /player/ 播放路径；弹幕等带 body 的 App 接口用 App UA（与版本 72232 一致，对齐参考实现 appValues）。
+	isVideo := strings.Contains(path, "/player/")
 	attempts := downloader.cfg.Retries
 	if attempts < 1 {
 		attempts = 1
@@ -249,6 +250,8 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			if comment {
 				prepared.Header.Set("Comment-Source", "601")
 				prepared.Header.Set("Server-Channel", "1000")
+				// 评论/弹幕接口专用：x-ss-stub 置空（参考实现 commentWindow 覆盖为 ""）。
+				prepared.Header.Set("x-ss-stub", "")
 			}
 			if cookie != "" {
 				prepared.Header.Set("Cookie", cookie)
