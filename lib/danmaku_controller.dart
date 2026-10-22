@@ -57,7 +57,9 @@ class DanmakuController extends ChangeNotifier {
     if (!_enabled) return '弹幕已关闭';
     if (_plan?.local == true) return '本地播放不加载弹幕';
     if (_plan != null && !supported) return '本集暂不支持弹幕';
-    if (canRetry) return _lastError == null ? '弹幕暂不可用，可重试' : '弹幕暂不可用：$_lastError';
+    if (canRetry) {
+      return _lastError == null ? '弹幕暂不可用，可重试' : '弹幕暂不可用：$_lastError';
+    }
     if (loading && _pages.isEmpty) return '正在加载弹幕';
     if (_pages.isNotEmpty) {
       return items.isEmpty ? '这段暂无弹幕' : '已载入 ${items.length} 条弹幕';
