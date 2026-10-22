@@ -23,6 +23,10 @@ import (
 
 var hgRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
+// 可注入的随机源：默认用进程随机数；测试里换成参考实现的 LCG，用于逐字节校验 helios/medusa。
+var hgRandUint32 = func() uint32 { return hgRand.Uint32() }
+var hgRandFloat = func() float64 { return hgRand.Float64() }
+
 // hgSboxBase64 与 hgHashTable 取自 VendorConstants.kt，AesV3 的盒与 hashF13 的混淆表。
 const hgSboxBase64 = "+n0Ia5xZs0sEXznQOEqRmQBnpiCf9U2Ccybu3xhmgzOAAxn72f6uqqmwUsYL83klTni0NqxdGieeiNu9PGPsSRXBMB/cuFbUbM3KCUPINaPvHvSW0vwOcnuUhNHqRVpiAj/TEoE0K91+5ijypUYTATsh9mE3KSoN7Yyvv51cuyR2D3XkU4nhmI2xmmVwT1RMWKtub4sjxAcRDLrPoKSO2AU9FLLadMPX577Wf95IFj6FkKFVt3dCIsmGUC4X+WQxLJvxbRxEaOPpqJOXyzJX6+Vxaq3AzMfF/WAdoi1Hp+JRaV56zgpBtpWP97mH4DoGEIq1+FvV8LyS/3wvwugbQOwb2r26mJEMsiuDQTRn+wrYdrVGBVlhI3WQhyrjUBVMrLF5667llUcEaPCGPVGLD8qO5LlO8hKCvA7V9+8oJc9bXelqVQLhM76T5/WtnT45JKji+hdX0HoNCDDWuKON/QeaxB5uImSX0h2wv0VmP2zd2yeApxHcpsVS+MC2yFwAc2B7oBkTqsk1SEvTpM2fmfMQREBUfin0Bh+iq6EvPPavhWI2IX9e3yAas7Tm/3KEj2UmlFp36kN4x0rMLBRrxuh0U/zUHM4xcAMYjJY4MonxOl/X+alpt2M3WMI7w3HLnpIBigtNiJu7T21v4P6lSd5WFgntnMEt7oF92XzRLkJbTcGmXepE/UVOG6E/0YnhfS+q26utWcuxzpooyeD2cDlK1/8w9d28VzsRjbLuALbmGlp8+d7EzS6Au7lMpZ+ECMZvQmzwJ+eLOpxR+2chdUExp8ogQyq3v9l68rX4jCwjg0+PYKAEEzcU4wHFY2ZcdIHfWL1okD3SszT0GZMyKdZJrg1L2AeerB4tC0C4crp2EHGo5FYdSP7lwkeR2ocmnR+Ia8CYviUJlzOjhRZef9xuVOn3qcjow3fQgivsAmKKkg4+sA8F8/GWeDiGNhg8JM8KtFPMYWWkx5TVFX5t73kiNRJqjlIGVXtGZFCV4gzt0xcDopuZ6xz8r9Rzafpf9ywev8jh8592gHFIqpStZPuJxmDDMrNN0uBE3V+oscdoIzTJbRJ/t+sVvqnReJOgDJKk10fjisJwqyZBmnmn2BSFj8BvVtCMEbkuPOKdzw7eA11GPs04Qw8zWtkaZWwiO/wwpojqN6K0jY5RnNZA7vn4hPSul+nKCkVnVwQvg1zVxcSCtqORmB9KrJaBbssbCQivGJVJfVTt+hYxOtq4ZvWl8f4QAQZ0zGPffCgl9s6yT4vlvIdpu4YhBwA25wtQWZsc6GJYGWHyvSdeuh3mmUI9DSq13Fsp8C1MU3tqc04/df9LoTUXVXI5INOw/e8C7Hd+5CvbkMEFnnrUUmskEw=="
 
@@ -291,7 +295,7 @@ func hgGorgon(queryStr string, body []byte, ts int, random int) string {
 }
 
 func hgHelios(ts int) string {
-	r := hgRand.Uint32()
+	r := hgRandUint32()
 	asciiSum := md5.Sum(append(hgLe32(r), []byte("8662")...))
 	ascii := []byte(hex.EncodeToString(asciiSum[:]))
 	words := make([]uint64, 0, 4)
@@ -467,9 +471,9 @@ func hgAesV3Encrypt(key []byte, ts int32, source, ivb []byte) []byte {
 				for i := 0; i < 4; i++ {
 					old2[i] = rows[i]
 				}
-				for i := 0; i < 4; i++ {
-					for j := 0; j < 4; j++ {
-					rows[i][j] = old2[con[j]][j]
+			for i := 0; i < 4; i++ {
+				for j := 0; j < 4; j++ {
+					rows[i][j] = old2[i][con[j]]
 				}
 			}
 				xt := func(x uint32) uint32 {
@@ -576,9 +580,9 @@ func hgMedusa(urlStr string, body []byte, ts int, deviceID, version string) stri
 	querySm3 := hgSm3(queryBytes)
 	queryBodyTs := hgHashF13(querySm3, bodyMd5, ts)
 	nested := hgProto(hgFSint(1, 111), hgFSint(2, 10), hgFSint(3, 694367), hgFSint(5, 586952199))
-	messageRand := hgRand.Uint32()
-	envLaunch := int(hgRand.Float64()*21) + 100
-	envPid := int(hgRand.Float64()*2000) + 10001
+	messageRand := hgRandUint32()
+	envLaunch := int(hgRandFloat()*21) + 100
+	envPid := int(hgRandFloat()*2000) + 10001
 	env := hgProto(
 		hgFSint(1, int64(envLaunch)), hgFSint(2, 146331399), hgFSint(3, 146331396), hgFSint(5, 7),
 		hgFStr(6, "v04.06.04.03-bugfix"), hgFSint(7, int64(envPid)),
@@ -587,7 +591,7 @@ func hgMedusa(urlStr string, body []byte, ts int, deviceID, version string) stri
 		hgFStr(14, version),
 	)
 	queryHash := hgSm3(append(append(append([]byte{}, queryBytes...), bodyMd5...), []byte("none")...))
-	r := hgRand.Uint32()
+	r := hgRandUint32()
 	signKey := hgHex("8ebdfa3806ecc5cee79423e6029ed82540bc2218bb7eaef71cb691f7aa8aa2f5")
 	hash := hgSm3(append(append(append([]byte{}, signKey...), hgLe32(r)...), signKey...))
 	d1 := (r >> 16) & 255
@@ -603,11 +607,14 @@ func hgMedusa(urlStr string, body []byte, ts int, deviceID, version string) stri
 		hgFStr(24, `{"cmr":16777216,"cmr2":16777216,"un_h":1879194040,"vpn":0,"kd":0,"fkd":3672518972,"pd":-1872573247,"dyn":"","do":0,"tk":true}`),
 	)
 	transformed := append(hgHex("4001000000000000"), hgXmxor(message, hash)...)
+	for left, right := 0, len(transformed)-1; left < right; left, right = left+1, right-1 {
+		transformed[left], transformed[right] = transformed[right], transformed[left]
+	}
 	for i := range transformed {
 		transformed[i] = byte(uint32(transformed[i]) ^ uint32(seed[(^i)&3]))
 	}
 	check := ((uint32(querySm3[0]) & 63) << 14) | 0x18000001 | ((uint32(queryBodyTs[0]) & 63) << 8)
-	r2 := hgRand.Uint32()
+	r2 := hgRandUint32()
 	packed := []byte{0x35}
 	packed = append(packed, hgLe32(r2)...)
 	packed = append(packed, hgLe32(uint32(check))...)
