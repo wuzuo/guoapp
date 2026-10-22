@@ -96,9 +96,12 @@ jobs:
       - run: python scripts/build_android.py ${{ matrix.arguments }}
       - name: 校验 APK 签名证书
         shell: bash
+        env:
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          expected='3fdc07a2297421373607c098f9b847c1377d9266ee07003b9d7fda8c4b581d8a'
+          expected="${ANDROID_CERT_SHA256:-3fdc07a2297421373607c098f9b847c1377d9266ee07003b9d7fda8c4b581d8a}"
+          expected=$(printf '%s' "$expected" | tr -d ':' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
           apksigner=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f 2>/dev/null | sort | tail -n1 || true)
           if [ -z "$apksigner" ]; then
             sdkmanager 'build-tools;35.0.0' >/dev/null
