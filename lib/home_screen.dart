@@ -106,7 +106,10 @@ class _HomeScreenState extends State<HomeScreen> {
     CatalogCategory.all,
     if (_group.id == 'hongguo')
       const CatalogCategory(_recommendationCategory, '推荐'),
-    ..._categories.where((entry) => entry.id.isNotEmpty),
+    ..._categories.where(
+      (entry) =>
+          entry.id.isNotEmpty && !(_group.id == 'hongguo' && entry.local),
+    ),
   ];
 
   Future<void> _loadCategories({

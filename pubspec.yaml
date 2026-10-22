@@ -1,7 +1,7 @@
 name: duanju_app
 description: 独立运行的多端短剧应用
 publish_to: none
-version: 0.2.31+37
+version: 0.2.32+38
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
