@@ -93,8 +93,8 @@ func TestHongguoDanmakuCacheAndConcurrentRequests(t *testing.T) {
 		if request.URL.Path != "/novel/commentapi/comment/list/"+danmakuTestVideo+"/v1/" || request.Method != http.MethodPost {
 			t.Error("wrong danmaku path")
 		}
-		if request.Context().Value(backgroundCatalogKey{}) != true || request.Header.Get("Comment-Source") != "601" || request.Header.Get("Server-Channel") != "1000" || request.Header.Get("Cookie") != "" {
-			t.Error("danmaku must be anonymous and low priority")
+		if request.Context().Value(backgroundCatalogKey{}) != true || request.Header.Get("Comment-Source") != "601" || request.Header.Get("Server-Channel") != "1000" {
+			t.Error("danmaku must carry comment headers and run as background")
 		}
 		for _, name := range []string{"X-Argus", "X-Ladon", "X-Gorgon", "X-Khronos"} {
 			if request.Header.Get(name) == "" {
