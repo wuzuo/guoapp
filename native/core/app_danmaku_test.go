@@ -104,9 +104,9 @@ func TestHongguoDanmakuCacheAndConcurrentRequests(t *testing.T) {
 		if request.Header.Get("x-ss-stub") != "" {
 			t.Error("comment request must send empty x-ss-stub")
 		}
-		if !strings.Contains(request.Header.Get("User-Agent"), "72232") || strings.Contains(request.Header.Get("User-Agent"), "71332") {
-			t.Error("comment request must use app UA 72232, not video UA 71332")
-		}
+			if !strings.Contains(request.Header.Get("User-Agent"), "71332") || strings.Contains(request.Header.Get("User-Agent"), "72232") {
+				t.Error("comment request must use video UA 71332, not app UA 72232")
+			}
 		var body struct {
 			GroupID  string `json:"group_id"`
 			Type     int    `json:"comment_type"`

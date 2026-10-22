@@ -220,10 +220,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			return nil, err
 		}
 	}
-	// 视频 UA 仅用于 /player/ 播放路径；弹幕等带 body 的 App 接口用 App UA（与版本 72232 一致，对齐参考实现 appValues）。
-	isVideo := strings.Contains(path, "/player/")
-	// 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
-	comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
+		// UA 与参考实现 Signer.sign 一致：带请求体（播放取流、弹幕/评论写接口）用 VIDEO_UA（71332），
+		// 否则用 App UA（72232）。弹幕路径虽不含 /player/，但带 body 且走评论通道，故用 VIDEO_UA；
+		// 这与 commentWindow 用 appValues（版本 72232）并存，正是参考实现的组合。
+		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
+		isVideo := strings.Contains(path, "/player/") || (payload != nil && comment)
+		// 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
 	hosts := []string{base}
 	if comment {
 		hosts = append([]string{base}, hongguoCommentHosts...)
