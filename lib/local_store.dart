@@ -11,6 +11,7 @@ import 'download_preferences.dart';
 import 'catalog_sort.dart';
 import 'follow_state.dart';
 import 'lan_sync_models.dart';
+import 'webdav_client.dart';
 
 part 'local_store_sync.dart';
 
@@ -222,6 +223,22 @@ class LocalStore extends ChangeNotifier {
       return const PlaybackPreferences();
     }
   }
+
+  WebdavConfig get webdavConfig {
+    if (locked) return const WebdavConfig();
+    try {
+      return WebdavConfig.fromJson(
+        Map<String, dynamic>.from(
+          jsonDecode(_string(_key('webdav')) ?? '{}') as Map,
+        ),
+      );
+    } catch (_) {
+      return const WebdavConfig();
+    }
+  }
+
+  Future<void> setWebdavConfig(WebdavConfig value) =>
+      _setting(_key('webdav'), jsonEncode(value.toJson()));
 
   CatalogView get catalogView {
     if (locked) return const CatalogView();

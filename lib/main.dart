@@ -17,6 +17,7 @@ import 'profiles_screen.dart';
 import 'media_library.dart';
 import 'package_smoke.dart';
 import 'lan_controller.dart';
+import 'webdav_sync.dart';
 import 'player_screen.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -70,6 +71,12 @@ class _AppBootstrapState extends State<AppBootstrap>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final current = store;
+      if (current != null) {
+        unawaited(WebdavSyncService.instance.autoSync(current));
+      }
+    }
     if (!Platform.isIOS) return;
     final library = MediaLibrary.current;
     if (state == AppLifecycleState.paused ||

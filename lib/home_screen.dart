@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'app_layout.dart';
 import 'app_bottom_navigation.dart';
 import 'core_bridge.dart';
+import 'webdav_sync.dart';
 import 'catalog_filters.dart';
 import 'catalog_browser.dart';
 import 'catalog_sort.dart';
@@ -396,6 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(WebdavSyncService.instance.autoSync(widget.store));
     _source = SourceSite.byId(widget.store.source);
     _allSources = widget.store.catalogView.allSources;
     _browser = CatalogBrowser(widget.repository);
