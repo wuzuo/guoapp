@@ -87,6 +87,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _saveTimer;
   Timer? _healthTimer;
   Timer? _errorTimer;
+  Timer? _seamlessTimer;
   Future<void> _operations = Future<void>.value();
   late int _index;
   late final int _profileEpoch;
@@ -222,7 +223,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _foreground &&
               !_panelOpen &&
               _index + 1 < widget.detail.episodes.length) {
-            if (_showFullscreen && !_mobile) _seamlessAdvance = true;
+            if (_showFullscreen && !_mobile) _beginSeamless();
             _play(_index + 1);
           } else {
             _playIntent = false;
@@ -246,6 +247,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (_seamlessAdvance &&
             _player.state.playing &&
             position > const Duration(milliseconds: 1200)) {
+          _seamlessTimer?.cancel();
           _seamlessAdvance = false;
           if (mounted) setState(() {});
         }
@@ -903,6 +905,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  void _beginSeamless() {
+    _seamlessAdvance = true;
+    _seamlessTimer?.cancel();
+    _seamlessTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted || _closed || !_seamlessAdvance) return;
+      setState(() => _seamlessAdvance = false);
+    });
+  }
+
   bool get _showFullscreen =>
       _television ||
       _fullscreen ||
@@ -1174,6 +1185,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.removeObserver(this);
     _saveTimer?.cancel();
     _healthTimer?.cancel();
+    _seamlessTimer?.cancel();
     _errorTimer?.cancel();
     _upNextGeneration++;
     if (_upNextRequested) {
@@ -1481,6 +1493,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         ? TelevisionControls(
             player: _player,
             title: title,
+            seamless: _seamlessAdvance && _error == null,
             enabled: !_loading && _error == null,
             onTogglePlayback: _togglePlayback,
             onSeek: _seek,
@@ -1533,7 +1546,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           widget.videoBuilder!(layeredControls)
         else
           _player.buildVideo(overlay: layeredControls, fit: _frameMode.fit),
-        if (_loading)
+        if (_loading && !_seamlessAdvance)
           ColoredBox(
             color: Colors.black.withValues(alpha: .78),
             child: Center(

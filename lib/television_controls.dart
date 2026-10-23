@@ -16,6 +16,7 @@ class TelevisionControls extends StatefulWidget {
     required this.player,
     required this.title,
     required this.enabled,
+    this.seamless = false,
     required this.onTogglePlayback,
     required this.onSeek,
     required this.onPrevious,
@@ -28,6 +29,7 @@ class TelevisionControls extends StatefulWidget {
   final PlaybackPlayer player;
   final String title;
   final bool enabled;
+  final bool seamless;
   final VoidCallback onTogglePlayback;
   final ValueChanged<int> onSeek;
   final VoidCallback? onPrevious;
@@ -77,21 +79,26 @@ class _TelevisionControlsState extends State<TelevisionControls> {
         if (!mounted || !widget.enabled || _panelOpen) return;
         if (playing) {
           _scheduleHide();
-        } else {
+        } else if (!widget.seamless) {
           _show();
         }
       }),
     );
-    if (widget.enabled) _show();
+    if (widget.enabled && !widget.seamless) _show();
   }
 
   @override
   void didUpdateWidget(covariant TelevisionControls oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.enabled && !oldWidget.enabled) {
-      _show();
+      if (!widget.seamless) _show();
     } else if (!widget.enabled) {
       _hideTimer?.cancel();
+    }
+    if (widget.seamless && !oldWidget.seamless) {
+      _hideTimer?.cancel();
+      if (_visible) setState(() => _visible = false);
+      if (widget.enabled) _surface.requestFocus();
     }
   }
 
@@ -246,7 +253,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (state.buffering && widget.enabled)
+              if (state.buffering && widget.enabled && !widget.seamless)
                 const Center(child: CircularProgressIndicator()),
               if (_seekHint && !_visible)
                 Center(
