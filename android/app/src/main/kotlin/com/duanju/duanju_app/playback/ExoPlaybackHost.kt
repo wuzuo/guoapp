@@ -2,6 +2,8 @@ package com.duanju.duanju_app.playback
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
+import android.view.Surface
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
@@ -29,6 +31,10 @@ class ExoPlaybackHost(
     private val engine: FlutterEngine,
     private val context: Context,
 ) : MethodChannel.MethodCallHandler {
+    private companion object {
+        const val TAG = "duanju-playback"
+    }
+
     private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "duanju/playback")
     private val sessions = mutableMapOf<Int, Session>()
     private val main = Handler(Looper.getMainLooper())
@@ -84,7 +90,8 @@ class ExoPlaybackHost(
     }
 
     inner class Session(private val id: Int) {
-        private val producer: TextureRegistry.SurfaceProducer = engine.renderer.createSurfaceProducer()
+        // 纹理 0 在该引擎里等同于「无纹理」，画面会全黑，因此跳过 0。
+        private val producer: TextureRegistry.SurfaceProducer = createProducer()
         val textureId: Long = producer.id()
 
         val player: ExoPlayer = ExoPlayer.Builder(
@@ -100,6 +107,7 @@ class ExoPlaybackHost(
             .build()
 
         private var ticker: Runnable? = null
+        private var attached: Surface? = null
         private var released = false
 
         init {
@@ -116,21 +124,13 @@ class ExoPlaybackHost(
             } catch (_: Throwable) {
             }
             producer.setCallback(object : TextureRegistry.SurfaceProducer.Callback {
-                override fun onSurfaceAvailable() {
-                    if (released) return
-                    try {
-                        player.setVideoSurface(producer.surface)
-                    } catch (_: Throwable) {
-                    }
-                }
+                override fun onSurfaceCreated() = attachSurface()
 
-                override fun onSurfaceCleanup() {
-                    if (released) return
-                    try {
-                        player.setVideoSurface(null)
-                    } catch (_: Throwable) {
-                    }
-                }
+                override fun onSurfaceAvailable() = attachSurface()
+
+                override fun onSurfaceDestroyed() = detachSurface()
+
+                override fun onSurfaceCleanup() = detachSurface()
             })
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
@@ -147,6 +147,7 @@ class ExoPlaybackHost(
 
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
                     if (videoSize.width <= 0 || videoSize.height <= 0) return
+                    resizeSurface(videoSize.width, videoSize.height)
                     send(
                         "video",
                         mapOf("width" to videoSize.width, "height" to videoSize.height),
@@ -154,14 +155,65 @@ class ExoPlaybackHost(
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    Log.w(TAG, "player error ${error.errorCodeName}: ${error.message}")
                     send("error", mapOf("message" to (error.message ?: error.errorCodeName)))
                 }
             })
             try {
-                player.setVideoSurface(producer.surface)
+                producer.setSize(1280, 720)
             } catch (_: Throwable) {
             }
+            attachSurface()
             startTicker()
+        }
+
+        private fun createProducer(): TextureRegistry.SurfaceProducer {
+            val first = engine.renderer.createSurfaceProducer(
+                TextureRegistry.SurfaceLifecycle.resetInBackground,
+            )
+            if (first.id() != 0L) return first
+            val second = engine.renderer.createSurfaceProducer(
+                TextureRegistry.SurfaceLifecycle.resetInBackground,
+            )
+            first.release()
+            return second
+        }
+
+        private fun attachSurface() {
+            if (released) return
+            try {
+                val surface = producer.getForcedNewSurface()
+                player.setVideoSurface(surface)
+                attached?.release()
+                attached = surface
+            } catch (error: Throwable) {
+                Log.w(TAG, "attach surface failed", error)
+            }
+        }
+
+        private fun detachSurface() {
+            if (released) return
+            try {
+                player.setVideoSurface(null)
+            } catch (_: Throwable) {
+            }
+            try {
+                attached?.release()
+            } catch (_: Throwable) {
+            }
+            attached = null
+        }
+
+        private fun resizeSurface(width: Int, height: Int) {
+            if (released) return
+            if (producer.width == width && producer.height == height) return
+            detachSurface()
+            try {
+                producer.setSize(width, height)
+            } catch (error: Throwable) {
+                Log.w(TAG, "resize failed", error)
+            }
+            attachSurface()
         }
 
         private fun startTicker() {
@@ -286,6 +338,11 @@ class ExoPlaybackHost(
                 player.release()
             } catch (_: Throwable) {
             }
+            try {
+                attached?.release()
+            } catch (_: Throwable) {
+            }
+            attached = null
             try {
                 producer.release()
             } catch (_: Throwable) {
