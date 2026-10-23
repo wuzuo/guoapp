@@ -461,7 +461,7 @@ class LanDocument {
     required Map<String, WatchEntry> oldHistory,
     Set<String> clearProgress = const {},
   }) {
-    for (final id in {...records.keys, ...favorites.keys}) {
+    for (final id in {...records.keys, ...favorites.keys, ...history.keys}) {
       final old = records[id];
       final drama = favorites[id];
       if (old == null && drama != null) {
@@ -479,14 +479,37 @@ class LanDocument {
         );
         continue;
       }
-      if (old == null) continue;
+      if (old == null) {
+        final watch = history[id];
+        if (watch == null) continue;
+        final state = FollowState.initial(watch.drama, watch);
+        records[id] = LanRecord(
+          drama: lanCompactDrama(watch.drama),
+          member: cell(false),
+          status: cell({
+            'status': state.status.name,
+            'manual': state.manuallyWatched,
+          }),
+          progress: cell(lanProgress(watch)),
+          known: state.knownEpisodes,
+          read: state.readEpisodes,
+        );
+        continue;
+      }
       if (drama == null) {
         if (previous.containsKey(id)) {
           records[id] = old
               .withField('member', edit(old.member, false))
               .withField('progress', edit(old.progress, null));
-        } else if (clearProgress.contains(id)) {
+        } else if (clearProgress.contains(id) || !history.containsKey(id)) {
           records[id] = old.withField('progress', edit(old.progress, null));
+        } else if (oldHistory[id] == null ||
+            lanJSON(lanProgress(history[id])) !=
+                lanJSON(lanProgress(oldHistory[id]))) {
+          records[id] = old.withField(
+            'progress',
+            edit(old.progress, lanProgress(history[id])),
+          );
         }
         continue;
       }

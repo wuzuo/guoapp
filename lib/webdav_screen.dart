@@ -178,7 +178,7 @@ class _WebdavScreenState extends State<WebdavScreen> {
                 value: _autoSync,
                 onChanged: _busy ? null : _setAutoSync,
                 title: const Text('自动同步'),
-                subtitle: const Text('启动或回到前台时自动合并各设备记录'),
+                subtitle: const Text('启动、回到前台或记录变化后自动合并各设备记录'),
               ),
               if (_busy) const LinearProgressIndicator(minHeight: 2),
               if (_status != null)
@@ -195,8 +195,9 @@ class _WebdavScreenState extends State<WebdavScreen> {
                 ),
               const SizedBox(height: 16),
               Text(
-                '说明：每台设备填同一个 WebDAV 目录即可同步追剧、观看进度与'
-                '追剧状态。播放偏好（画质/倍速/主题等）保持本机。密码只保存在'
+                '说明：每台设备填同一个 WebDAV 目录即可同步追剧、观看记录与'
+                '追剧状态（未追剧的剧集也会按观看进度同步）。播放偏好（画质/'
+                '倍速/主题等）保持本机。密码只保存在'
                 '本机配置中，不会写入导出的备份文件。',
                 style: TextStyle(
                   fontSize: 13,

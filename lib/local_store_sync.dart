@@ -178,6 +178,8 @@ extension LocalStoreSync on LocalStore {
         } else {
           favorites.remove(checked.id);
           states.remove(checked.id);
+          final watch = checked.watch;
+          if (watch != null) history[checked.id] = watch;
         }
       }
       if (favorites.length > 20000 ||
@@ -249,6 +251,7 @@ extension LocalStoreSync on LocalStore {
       } else {
         favorites.remove(id);
         states.remove(id);
+        if (next.watch case final watch?) history[id] = watch;
       }
       final sorted = history.values.toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));

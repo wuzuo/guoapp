@@ -38,14 +38,41 @@ class WebdavSyncService {
   static final instance = WebdavSyncService._();
 
   Future<WebdavSyncResult>? _running;
+  final _watched = Expando<bool>('webdav-watched');
+  final _syncedRevision = Expando<int>('webdav-revision');
+  Timer? _debounce;
 
   Future<void> autoSync(LocalStore store) async {
     if (store.locked) return;
     final config = store.webdavConfig;
-    if (!config.configured || !config.autoSync) return;
+    if (!config.configured) return;
+    attach(store);
+    if (!config.autoSync) return;
     try {
       await run(store);
     } catch (_) {}
+  }
+
+  void attach(LocalStore store) {
+    if (_watched[store] == true) return;
+    _watched[store] = true;
+    _syncedRevision[store] = store.lanRevision;
+    store.addListener(() {
+      bool enabled;
+      try {
+        if (store.lanRevision == _syncedRevision[store]) return;
+        enabled = store.webdavConfig.autoSync;
+      } catch (_) {
+        return;
+      }
+      if (!enabled) return;
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(seconds: 12), () {
+        _debounce = null;
+        _syncedRevision[store] = store.lanRevision;
+        unawaited(autoSync(store));
+      });
+    });
   }
 
   Future<WebdavSyncResult> run(LocalStore store) {
