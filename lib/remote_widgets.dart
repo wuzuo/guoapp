@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:math';
 
-import 'search_input.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class RemoteTarget extends StatefulWidget {
@@ -401,67 +402,256 @@ class TelevisionSearchDialog extends StatefulWidget {
 }
 
 class _TelevisionSearchDialogState extends State<TelevisionSearchDialog> {
-  late final _controller = TextEditingController(text: widget.initialValue);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialValue,
+  );
+  final _field = FocusNode(debugLabel: 'tv-search-field');
+  final _search = FocusNode(debugLabel: 'tv-search-submit');
+  final _clear = FocusNode(debugLabel: 'tv-search-clear');
+  final _cancel = FocusNode(debugLabel: 'tv-search-cancel');
+  final _rows = <int, FocusNode>{};
+  List<String> _items = const [];
+  bool _recent = false;
+  Timer? _timer;
+  int _generation = 0;
+
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    if (widget.initialValue.trim().isEmpty) {
+      _recent = true;
+      _items = widget.recentSearches.take(8).toList();
+    } else {
+      _schedule(widget.initialValue);
+    }
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title),
-    content: SizedBox(
-      width: 460,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * .6,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SearchInput(
-                autofocus: true,
-                controller: _controller,
-                hint: '输入剧名',
-                suggestions: widget.suggestions,
-                onCancel: widget.onCancel,
-                onSearch: (value) => Navigator.pop(context, value),
-              ),
-              if (widget.recentSearches.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    for (final node in [_field, _search, _clear, _cancel]) {
+      node.dispose();
+    }
+    for (final node in _rows.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  FocusNode _rowNode(int index) => _rows.putIfAbsent(
+    index,
+    () => FocusNode(debugLabel: 'tv-search-row-$index'),
+  );
+
+  void _showItems({required bool recent, required List<String> items}) {
+    for (final index
+        in _rows.keys.where((index) => index >= items.length).toList()) {
+      _rows.remove(index)?.dispose();
+    }
+    setState(() {
+      _recent = recent;
+      _items = items;
+    });
+  }
+
+  void _schedule(String value) {
+    _timer?.cancel();
+    final generation = ++_generation;
+    final query = value.trim();
+    if (query.isEmpty || query.length > 100 || widget.suggestions == null) {
+      _showItems(recent: true, items: widget.recentSearches.take(8).toList());
+      return;
+    }
+    _timer = Timer(const Duration(milliseconds: 300), () async {
+      List<String> result;
+      try {
+        result = (await widget.suggestions!(
+          query,
+        )).where((entry) => entry.trim().isNotEmpty).toSet().take(8).toList();
+      } catch (_) {
+        result = const [];
+      }
+      if (!mounted || generation != _generation) return;
+      _showItems(recent: false, items: result);
+    });
+  }
+
+  void _close([String? value]) {
+    if (value == null) widget.onCancel?.call();
+    Navigator.pop(context, value);
+  }
+
+  void _submit(String value) {
+    final query = value.trim();
+    if (query.isEmpty) return;
+    _close(query);
+  }
+
+  List<FocusNode> get _order => [
+    _field,
+    for (var index = 0; index < _items.length; index++) _rowNode(index),
+    if (_controller.text.isNotEmpty) _clear,
+    _search,
+    _cancel,
+  ];
+
+  KeyEventResult _key(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final focused = FocusManager.instance.primaryFocus;
+    final order = _order;
+    final index = order.indexOf(focused ?? _field);
+    if (index < 0) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      if (index >= order.length - 1) return KeyEventResult.handled;
+      order[index + 1].requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      if (index == 0) return KeyEventResult.handled;
+      order[index - 1].requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight) {
+      if (focused == _field) return KeyEventResult.ignored;
+      final buttons = [
+        if (_controller.text.isNotEmpty) _clear,
+        _search,
+        _cancel,
+      ];
+      final current = buttons.indexOf(focused ?? _search);
+      if (current < 0) return KeyEventResult.handled;
+      final next = key == LogicalKeyboardKey.arrowRight
+          ? min(current + 1, buttons.length - 1)
+          : max(current - 1, 0);
+      buttons[next].requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    canRequestFocus: false,
+    skipTraversal: true,
+    onKeyEvent: _key,
+    child: AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _controller,
+              focusNode: _field,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              onChanged: (value) {
+                setState(() {});
+                _schedule(value);
+              },
+              onSubmitted: _submit,
+              decoration: InputDecoration(
+                hintText: '输入剧名',
+                prefixIcon: const Icon(Icons.search_rounded),
+                border: const OutlineInputBorder(),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final query in widget.recentSearches)
-                      ActionChip(
-                        label: Text(query),
-                        avatar: const Icon(Icons.history_rounded, size: 16),
-                        onPressed: () => Navigator.pop(context, query),
+                    if (_controller.text.isNotEmpty)
+                      IconButton(
+                        tooltip: '清空输入',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _controller.clear();
+                          setState(() {});
+                          _schedule('');
+                          _field.requestFocus();
+                        },
                       ),
+                    IconButton(
+                      tooltip: '搜索',
+                      focusNode: _search,
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      onPressed: () => _submit(_controller.text),
+                    ),
                   ],
                 ),
-              ],
+              ),
+            ),
+            if (_items.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _recent ? '最近搜索' : '搜索建议',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: _items.length,
+                  itemBuilder: (context, index) => RemoteTarget(
+                    key: ValueKey('search-suggestion-$index'),
+                    focusNode: _rowNode(index),
+                    label: _items[index],
+                    onPressed: () => _submit(_items[index]),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _recent
+                                ? Icons.history_rounded
+                                : Icons.search_rounded,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _items[index],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       ),
+      actions: [
+        TextButton(
+          focusNode: _cancel,
+          onPressed: _close,
+          child: const Text('取消'),
+        ),
+        if (_controller.text.isNotEmpty)
+          TextButton(
+            focusNode: _clear,
+            onPressed: () => _close(''),
+            child: const Text('清空'),
+          ),
+        FilledButton(
+          focusNode: _search,
+          onPressed: () => _submit(_controller.text),
+          child: const Text('搜索'),
+        ),
+      ],
     ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('取消'),
-      ),
-      TextButton(
-        onPressed: () => Navigator.pop(context, ''),
-        child: const Text('清空'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.pop(context, _controller.text.trim()),
-        child: const Text('搜索'),
-      ),
-    ],
   );
 }
