@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart';
 
 import 'models.dart';
 import 'playback_preferences.dart';
 import 'playback_buffer.dart';
 import 'remote_widgets.dart';
 import 'widgets.dart';
+import 'playback_player.dart';
 
 class TelevisionControls extends StatefulWidget {
   const TelevisionControls({
@@ -25,7 +25,7 @@ class TelevisionControls extends StatefulWidget {
     required this.onBack,
     this.onPush,
   });
-  final Player player;
+  final PlaybackPlayer player;
   final String title;
   final bool enabled;
   final VoidCallback onTogglePlayback;

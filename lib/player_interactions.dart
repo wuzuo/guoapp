@@ -4,10 +4,10 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:media_kit/media_kit.dart';
 
 import 'player_keys.dart';
 import 'widgets.dart';
+import 'playback_player.dart';
 
 class PlayerInteractions extends ChangeNotifier {
   PlayerInteractions({
@@ -26,7 +26,7 @@ class PlayerInteractions extends ChangeNotifier {
     });
   }
 
-  final Player player;
+  final PlaybackPlayer player;
   final bool Function() available;
   final double Function() baseSpeed;
   final VoidCallback onTogglePlayback;

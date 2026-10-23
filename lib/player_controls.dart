@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
 
 import 'player_interactions.dart';
 import 'playback_buffer.dart';
 import 'widgets.dart';
 import 'lan_screen.dart';
+import 'playback_player.dart';
 
 class PlayerControls extends StatefulWidget {
   const PlayerControls({
@@ -34,7 +34,7 @@ class PlayerControls extends StatefulWidget {
     this.onPush,
   });
 
-  final Player player;
+  final PlaybackPlayer player;
   final PlayerInteractions interactions;
   final bool enabled;
   final bool fullscreen;

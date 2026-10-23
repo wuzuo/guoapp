@@ -1,0 +1,263 @@
+package com.duanju.duanju_app.playback
+
+import android.content.Context
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.view.TextureRegistry
+import java.util.concurrent.Executors
+
+@androidx.annotation.OptIn(UnstableApi::class)
+class ExoPlaybackHost(
+    private val engine: FlutterEngine,
+    private val context: Context,
+) : MethodChannel.MethodCallHandler {
+    private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "duanju/playback")
+    private val sessions = mutableMapOf<Int, Session>()
+    private val main = Handler(Looper.getMainLooper())
+    private val worker = Executors.newSingleThreadExecutor()
+    private var nextId = 1
+
+    init {
+        channel.setMethodCallHandler(this)
+    }
+
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == "create") {
+            val id = nextId++
+            val session = Session(id)
+            sessions[id] = session
+            result.success(mapOf("id" to id, "texture" to session.textureId))
+            return
+        }
+        val id = call.argument<Int>("id") ?: 0
+        val session = sessions[id]
+        if (session == null) {
+            result.success(null)
+            return
+        }
+        when (call.method) {
+            "open" -> session.open(call, result)
+            "play" -> session.player.play()
+            "pause" -> session.player.pause()
+            "stop" -> session.player.stop()
+            "seek" -> session.player.seekTo((call.argument<Number>("value")?.toLong() ?: 0L).coerceAtLeast(0L))
+            "rate" -> session.player.setPlaybackSpeed((call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0.25f, 4f))
+            "volume" -> session.player.volume = (call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0f, 1f)
+            "dispose" -> {
+                sessions.remove(id)
+                session.release()
+            }
+        }
+        result.success(null)
+    }
+
+    inner class Session(private val id: Int) {
+        private val producer: TextureRegistry.SurfaceProducer = engine.renderer.createSurfaceProducer()
+        val textureId: Long = producer.id()
+
+        val player: ExoPlayer = ExoPlayer.Builder(
+            context,
+            DefaultRenderersFactory(context).setEnableDecoderFallback(true),
+        )
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(15000, 30000, 1000, 2000)
+                    .setTargetBufferBytes(12 * 1024 * 1024)
+                    .build(),
+            )
+            .build()
+
+        private var ticker: Runnable? = null
+        private var released = false
+
+        init {
+            player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+            player.setAudioAttributes(
+                androidx.media3.common.AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                true,
+            )
+            player.setHandleAudioBecomingNoisy(true)
+            producer.setCallback(object : TextureRegistry.SurfaceProducer.Callback {
+                override fun onSurfaceAvailable() {
+                    if (!released) player.setVideoSurface(producer.surface)
+                }
+
+                override fun onSurfaceCleanup() {
+                    if (!released) player.setVideoSurface(null)
+                }
+            })
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) = emitState()
+
+                override fun onIsPlayingChanged(isPlaying: Boolean) = emitState()
+
+                override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
+                    channel.invokeMethod(
+                        "event",
+                        mapOf("id" to id, "type" to "rate", "rate" to playbackParameters.speed.toDouble()),
+                    )
+                }
+
+                override fun onVideoSizeChanged(videoSize: VideoSize) {
+                    val width = videoSize.width
+                    val height = videoSize.height
+                    if (width <= 0 || height <= 0) return
+                    producer.setSize(width, height)
+                    channel.invokeMethod(
+                        "event",
+                        mapOf("id" to id, "type" to "video", "width" to width, "height" to height),
+                    )
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    channel.invokeMethod(
+                        "event",
+                        mapOf(
+                            "id" to id,
+                            "type" to "error",
+                            "message" to (error.message ?: error.errorCodeName),
+                        ),
+                    )
+                }
+            })
+            startTicker()
+        }
+
+        private fun startTicker() {
+            val runnable = object : Runnable {
+                override fun run() {
+                    if (released) return
+                    emitState()
+                    main.postDelayed(this, 40)
+                }
+            }
+            ticker = runnable
+            main.postDelayed(runnable, 40)
+        }
+
+        private fun emitState() {
+            if (released) return
+            val duration = player.duration.let { if (it == C.TIME_UNSET || it < 0) 0L else it }
+            val position = player.currentPosition.coerceAtLeast(0L)
+            val buffered = (player.bufferedPosition - position).coerceAtLeast(0L)
+            channel.invokeMethod(
+                "event",
+                mapOf(
+                    "id" to id,
+                    "type" to "state",
+                    "playing" to player.isPlaying,
+                    "buffering" to (player.playbackState == Player.STATE_BUFFERING),
+                    "completed" to (player.playbackState == Player.STATE_ENDED),
+                    "position" to position,
+                    "duration" to duration,
+                    "buffered" to buffered,
+                    "rate" to player.playbackParameters.speed.toDouble(),
+                    "volume" to player.volume.toDouble(),
+                ),
+            )
+        }
+
+        fun open(call: MethodCall, result: MethodChannel.Result) {
+            val url = call.argument<String>("url").orEmpty()
+            if (url.isEmpty()) {
+                result.success(null)
+                return
+            }
+            val headers = call.argument<Map<String, String>>("headers") ?: emptyMap()
+            val start = call.argument<Number>("start")?.toLong() ?: 0L
+            val play = call.argument<Boolean>("play") ?: true
+            val key = call.argument<String>("key").orEmpty()
+            val local = call.argument<Boolean>("local") ?: false
+            worker.execute {
+                val source = try {
+                    buildSource(url, headers, key, local)
+                } catch (error: Throwable) {
+                    main.post {
+                        channel.invokeMethod(
+                            "event",
+                            mapOf(
+                                "id" to id,
+                                "type" to "error",
+                                "message" to (error.message ?: "播放地址解析失败"),
+                            ),
+                        )
+                    }
+                    main.post { result.success(null) }
+                    return@execute
+                }
+                main.post {
+                    if (released) {
+                        result.success(null)
+                        return@post
+                    }
+                    player.setMediaSource(source)
+                    player.prepare()
+                    if (start > 0) player.seekTo(start)
+                    player.playWhenReady = play
+                    emitState()
+                    result.success(null)
+                }
+            }
+        }
+
+        private fun buildSource(
+            url: String,
+            headers: Map<String, String>,
+            key: String,
+            local: Boolean,
+        ): MediaSource {
+            val parsed = Uri.parse(url)
+            val scheme = parsed.scheme.orEmpty()
+            val file = local || scheme == "file" || scheme.isEmpty()
+            if (key.isNotEmpty() && !file) {
+                val video = RemoteVideo(url, headers, hexToBytes(key)).prepare()
+                return ProgressiveMediaSource.Factory(CencDataSource.Factory(video))
+                    .createMediaSource(MediaItem.fromUri(parsed))
+            }
+            val item = if (file && scheme.isEmpty()) {
+                MediaItem.fromUri(Uri.fromFile(java.io.File(url)))
+            } else {
+                MediaItem.fromUri(parsed)
+            }
+            val http = DefaultHttpDataSource.Factory()
+                .setDefaultRequestProperties(headers)
+                .setAllowCrossProtocolRedirects(true)
+            val dataSource = if (file) DefaultDataSource.Factory(context, http) else http
+            return if (parsed.path?.endsWith(".m3u8") == true) {
+                HlsMediaSource.Factory(dataSource).createMediaSource(item)
+            } else {
+                ProgressiveMediaSource.Factory(dataSource).createMediaSource(item)
+            }
+        }
+
+        fun release() {
+            if (released) return
+            released = true
+            ticker?.let { main.removeCallbacks(it) }
+            ticker = null
+            player.release()
+            producer.release()
+        }
+    }
+}

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_layout.dart';
@@ -23,6 +22,9 @@ import 'playback_preferences.dart';
 import 'player_keys.dart';
 import 'player_controls.dart';
 import 'player_interactions.dart';
+import 'playback_engine.dart';
+import 'playback_media_kit.dart';
+import 'playback_player.dart';
 import 'player_menu.dart';
 import 'television_controls.dart';
 import 'widgets.dart';
@@ -64,8 +66,7 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
-  late final Player _player;
-  late final VideoController? _video;
+  late final PlaybackPlayer _player;
   late final PlaybackLoader _loader;
   late final PlaybackPreloader _preloader;
   bool _preloadEnabled = true;
@@ -169,14 +170,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     _danmaku = DanmakuController(widget.repository)
       ..setEnabled(_danmakuEnabled);
     widget.store.addListener(_accessChanged);
-    _player =
-        widget.playerFactory?.call() ??
-        Player(
-          configuration: const PlayerConfiguration(
-            bufferSize: 32 * 1024 * 1024,
-          ),
-        );
-    _video = widget.videoBuilder == null ? VideoController(_player) : null;
+    final factory = widget.playerFactory;
+    _player = factory != null
+        ? MediaKitPlaybackPlayer(factory())
+        : createPlaybackPlayer(television: AppLayout.isTelevisionNow(context));
     _interactions = PlayerInteractions(
       player: _player,
       available: () =>
@@ -274,9 +271,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
     }
     _subscriptions.add(
-      _player.stream.videoParams.listen((parameters) {
-        final width = parameters.dw ?? parameters.w ?? 0;
-        final height = parameters.dh ?? parameters.h ?? 0;
+      _player.stream.video.listen((parameters) {
+        final width = parameters.width;
+        final height = parameters.height;
         if (width > 0 && height > 0 && mounted && !_closed) {
           setState(() {
             _aspectRatio = width / height;
@@ -812,39 +809,32 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (plan.url.isEmpty) {
           throw AppFailure('站源未返回播放地址，请重试');
         }
-        final platform = _player.platform;
-        if (platform is NativePlayer) {
-          await platform.setProperty(
-            'demuxer-lavf-o',
-            [
-              'seg_max_retry=3',
-              'strict=experimental',
-              'allowed_extensions=ALL',
-              plan.local
-                  ? 'protocol_whitelist=[file,crypto,data]'
-                  : 'protocol_whitelist=[http,https,tcp,tls,crypto,data,file]',
-              if (plan.decryptionKey.isNotEmpty)
-                'decryption_key=${plan.decryptionKey}',
-            ].join(','),
-          );
-          await platform.setProperty('network-timeout', '20');
-          await platform.setProperty(
-            'hwdec',
-            _hardwareDecoding ? 'auto-safe' : 'no',
-          );
-        }
+        await _player.configureMpv({
+          'demuxer-lavf-o': [
+            'seg_max_retry=3',
+            'strict=experimental',
+            'allowed_extensions=ALL',
+            plan.local
+                ? 'protocol_whitelist=[file,crypto,data]'
+                : 'protocol_whitelist=[http,https,tcp,tls,crypto,data,file]',
+            if (plan.decryptionKey.isNotEmpty)
+              'decryption_key=${plan.decryptionKey}',
+          ].join(','),
+          'network-timeout': '20',
+          'hwdec': _hardwareDecoding ? 'auto-safe' : 'no',
+        });
         _plan = plan;
         installed = true;
         _acceptErrors = true;
         await _player.open(
-          Media(
-            plan.url,
-            httpHeaders: plan.headers,
-            start: position > 0
-                ? Duration(milliseconds: (position * 1000).round())
-                : null,
-          ),
+          plan.url,
+          headers: plan.headers,
+          start: position > 0
+              ? Duration(milliseconds: (position * 1000).round())
+              : null,
           play: _foreground && _playIntent,
+          decryptionKey: plan.decryptionKey,
+          local: plan.local,
         );
         if (_closed || ticket != _generation) {
           return;
@@ -1542,11 +1532,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (widget.videoBuilder != null)
           widget.videoBuilder!(layeredControls)
         else
-          Video(
-            controller: _video!,
-            fit: _frameMode.fit,
-            controls: (_) => layeredControls,
-          ),
+          _player.buildVideo(overlay: layeredControls, fit: _frameMode.fit),
         if (_loading)
           ColoredBox(
             color: Colors.black.withValues(alpha: .78),

@@ -11,8 +11,11 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.duanju.duanju_app.playback.ExoPlaybackHost
 
 class MainActivity : FlutterActivity() {
+    private var playback: ExoPlaybackHost? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -23,6 +26,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        playback = ExoPlaybackHost(flutterEngine, applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "duanju/device")
             .setMethodCallHandler { call, result ->
                 if (call.method == "deviceInfo") {

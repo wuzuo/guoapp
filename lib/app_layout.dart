@@ -78,6 +78,10 @@ class AppLayout extends InheritedWidget {
   static bool isTelevision(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.television ??
       false;
+
+  /// 不建立依赖，可在 initState 中判断播放器类型。
+  static bool isTelevisionNow(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AppLayout>()?.television ?? false;
   static String versionOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.version ??
       appVersion;
