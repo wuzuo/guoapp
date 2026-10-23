@@ -248,7 +248,11 @@ class _RemoteGridState extends State<RemoteGrid> {
       }
       next = index + 1;
     } else if (key == LogicalKeyboardKey.arrowLeft) {
-      if (index % widget.columns == 0) return KeyEventResult.ignored;
+      if (index % widget.columns == 0) {
+        return widget.columns <= 1
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      }
       next = index - 1;
     } else {
       return KeyEventResult.ignored;
