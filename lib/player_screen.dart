@@ -174,7 +174,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     final factory = widget.playerFactory;
     _player = factory != null
         ? MediaKitPlaybackPlayer(factory())
-        : createPlaybackPlayer(television: AppLayout.isTelevisionNow(context));
+        : createPlaybackPlayer(
+            television: AppLayout.isTelevisionNow(context),
+            systemPlayer: widget.store.tvSystemPlayer,
+          );
     _interactions = PlayerInteractions(
       player: _player,
       available: () =>

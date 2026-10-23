@@ -5,8 +5,13 @@ import 'playback_exo.dart';
 import 'playback_media_kit.dart';
 import 'playback_player.dart';
 
-PlaybackPlayer createPlaybackPlayer({required bool television}) {
-  if (defaultTargetPlatform == TargetPlatform.android && television) {
+PlaybackPlayer createPlaybackPlayer({
+  required bool television,
+  bool systemPlayer = true,
+}) {
+  if (defaultTargetPlatform == TargetPlatform.android &&
+      television &&
+      systemPlayer) {
     return ExoPlaybackPlayer();
   }
   return MediaKitPlaybackPlayer(

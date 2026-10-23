@@ -184,6 +184,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+              SwitchListTile(
+                key: const ValueKey('tv-player-engine'),
+                contentPadding: EdgeInsets.zero,
+                value: widget.store.tvSystemPlayer,
+                onChanged: (value) => saveUserChange(
+                  context,
+                  () => widget.store.setTvSystemPlayer(value),
+                ),
+                title: const Text('电视使用系统播放器'),
+                subtitle: const Text('默认开启；播放异常时可关闭，改用内置播放器'),
+              ),
               ListTile(
                 key: const ValueKey('theme-setting'),
                 leading: const Icon(Icons.palette_outlined),

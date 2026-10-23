@@ -240,6 +240,13 @@ class LocalStore extends ChangeNotifier {
   Future<void> setWebdavConfig(WebdavConfig value) =>
       _setting(_key('webdav'), jsonEncode(value.toJson()));
 
+  bool get tvSystemPlayer => _configurationError == null
+      ? _bool(_key('tvSystemPlayer')) ?? true
+      : true;
+
+  Future<void> setTvSystemPlayer(bool value) =>
+      _setting(_key('tvSystemPlayer'), value);
+
   CatalogView get catalogView {
     if (locked) return const CatalogView();
     try {

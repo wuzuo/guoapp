@@ -41,10 +41,14 @@ class ExoPlaybackHost(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (call.method == "create") {
-            val id = nextId++
-            val session = Session(id)
-            sessions[id] = session
-            result.success(mapOf("id" to id, "texture" to session.textureId))
+            try {
+                val id = nextId++
+                val session = Session(id)
+                sessions[id] = session
+                result.success(mapOf("id" to id, "texture" to session.textureId))
+            } catch (error: Throwable) {
+                result.error("create_failed", error.message ?: "播放器初始化失败", null)
+            }
             return
         }
         val id = call.argument<Int>("id") ?: 0
@@ -53,18 +57,28 @@ class ExoPlaybackHost(
             result.success(null)
             return
         }
-        when (call.method) {
-            "open" -> session.open(call, result)
-            "play" -> session.player.play()
-            "pause" -> session.player.pause()
-            "stop" -> session.player.stop()
-            "seek" -> session.player.seekTo((call.argument<Number>("value")?.toLong() ?: 0L).coerceAtLeast(0L))
-            "rate" -> session.player.setPlaybackSpeed((call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0.25f, 4f))
-            "volume" -> session.player.volume = (call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0f, 1f)
-            "dispose" -> {
-                sessions.remove(id)
-                session.release()
+        try {
+            when (call.method) {
+                "open" -> {
+                    session.open(call, result)
+                    return
+                }
+                "play" -> session.player.play()
+                "pause" -> session.player.pause()
+                "stop" -> session.player.stop()
+                "seek" -> session.player.seekTo((call.argument<Number>("value")?.toLong() ?: 0L).coerceAtLeast(0L))
+                "rate" -> session.player.setPlaybackSpeed(
+                    (call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0.25f, 4f),
+                )
+                "volume" -> session.player.volume =
+                    (call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0f, 1f)
+                "dispose" -> {
+                    sessions.remove(id)
+                    session.release()
+                }
             }
+        } catch (error: Throwable) {
+            session.send("error", mapOf("message" to (error.message ?: "播放控制失败")))
         }
         result.success(null)
     }
@@ -89,56 +103,58 @@ class ExoPlaybackHost(
         private var released = false
 
         init {
-            player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
-            player.setAudioAttributes(
-                androidx.media3.common.AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build(),
-                true,
-            )
-            player.setHandleAudioBecomingNoisy(true)
+            try {
+                player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+                player.setAudioAttributes(
+                    androidx.media3.common.AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                        .build(),
+                    true,
+                )
+                player.setHandleAudioBecomingNoisy(true)
+            } catch (_: Throwable) {
+            }
             producer.setCallback(object : TextureRegistry.SurfaceProducer.Callback {
                 override fun onSurfaceAvailable() {
-                    if (!released) player.setVideoSurface(producer.surface)
+                    if (released) return
+                    try {
+                        player.setVideoSurface(producer.surface)
+                    } catch (_: Throwable) {
+                    }
                 }
 
                 override fun onSurfaceCleanup() {
-                    if (!released) player.setVideoSurface(null)
+                    if (released) return
+                    try {
+                        player.setVideoSurface(null)
+                    } catch (_: Throwable) {
+                    }
                 }
             })
             player.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) = emitState()
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    emitState()
+                }
 
-                override fun onIsPlayingChanged(isPlaying: Boolean) = emitState()
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    emitState()
+                }
 
                 override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
-                    channel.invokeMethod(
-                        "event",
-                        mapOf("id" to id, "type" to "rate", "rate" to playbackParameters.speed.toDouble()),
-                    )
+                    send("rate", mapOf("rate" to playbackParameters.speed.toDouble()))
                 }
 
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
-                    val width = videoSize.width
-                    val height = videoSize.height
-                    if (width <= 0 || height <= 0) return
-                    producer.setSize(width, height)
-                    channel.invokeMethod(
-                        "event",
-                        mapOf("id" to id, "type" to "video", "width" to width, "height" to height),
+                    if (videoSize.width <= 0 || videoSize.height <= 0) return
+                    send(
+                        "video",
+                        mapOf("width" to videoSize.width, "height" to videoSize.height),
                     )
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    channel.invokeMethod(
-                        "event",
-                        mapOf(
-                            "id" to id,
-                            "type" to "error",
-                            "message" to (error.message ?: error.errorCodeName),
-                        ),
-                    )
+                    send("error", mapOf("message" to (error.message ?: error.errorCodeName)))
                 }
             })
             startTicker()
@@ -156,26 +172,35 @@ class ExoPlaybackHost(
             main.postDelayed(runnable, 40)
         }
 
+        fun send(type: String, fields: Map<String, Any?>) {
+            if (released) return
+            try {
+                channel.invokeMethod("event", mapOf("id" to id, "type" to type) + fields)
+            } catch (_: Throwable) {
+            }
+        }
+
         private fun emitState() {
             if (released) return
-            val duration = player.duration.let { if (it == C.TIME_UNSET || it < 0) 0L else it }
-            val position = player.currentPosition.coerceAtLeast(0L)
-            val buffered = (player.bufferedPosition - position).coerceAtLeast(0L)
-            channel.invokeMethod(
-                "event",
-                mapOf(
-                    "id" to id,
-                    "type" to "state",
-                    "playing" to player.isPlaying,
-                    "buffering" to (player.playbackState == Player.STATE_BUFFERING),
-                    "completed" to (player.playbackState == Player.STATE_ENDED),
-                    "position" to position,
-                    "duration" to duration,
-                    "buffered" to buffered,
-                    "rate" to player.playbackParameters.speed.toDouble(),
-                    "volume" to player.volume.toDouble(),
-                ),
-            )
+            try {
+                val duration = player.duration.let { if (it == C.TIME_UNSET || it < 0) 0L else it }
+                val position = player.currentPosition.coerceAtLeast(0L)
+                val buffered = (player.bufferedPosition - position).coerceAtLeast(0L)
+                send(
+                    "state",
+                    mapOf(
+                        "playing" to player.isPlaying,
+                        "buffering" to (player.playbackState == Player.STATE_BUFFERING),
+                        "completed" to (player.playbackState == Player.STATE_ENDED),
+                        "position" to position,
+                        "duration" to duration,
+                        "buffered" to buffered,
+                        "rate" to player.playbackParameters.speed.toDouble(),
+                        "volume" to player.volume.toDouble(),
+                    ),
+                )
+            } catch (_: Throwable) {
+            }
         }
 
         fun open(call: MethodCall, result: MethodChannel.Result) {
@@ -194,16 +219,9 @@ class ExoPlaybackHost(
                     buildSource(url, headers, key, local)
                 } catch (error: Throwable) {
                     main.post {
-                        channel.invokeMethod(
-                            "event",
-                            mapOf(
-                                "id" to id,
-                                "type" to "error",
-                                "message" to (error.message ?: "播放地址解析失败"),
-                            ),
-                        )
+                        send("error", mapOf("message" to (error.message ?: "播放地址解析失败")))
+                        result.success(null)
                     }
-                    main.post { result.success(null) }
                     return@execute
                 }
                 main.post {
@@ -211,11 +229,15 @@ class ExoPlaybackHost(
                         result.success(null)
                         return@post
                     }
-                    player.setMediaSource(source)
-                    player.prepare()
-                    if (start > 0) player.seekTo(start)
-                    player.playWhenReady = play
-                    emitState()
+                    try {
+                        player.setMediaSource(source)
+                        player.prepare()
+                        if (start > 0) player.seekTo(start)
+                        player.playWhenReady = play
+                        emitState()
+                    } catch (error: Throwable) {
+                        send("error", mapOf("message" to (error.message ?: "无法开始播放")))
+                    }
                     result.success(null)
                 }
             }
@@ -256,8 +278,14 @@ class ExoPlaybackHost(
             released = true
             ticker?.let { main.removeCallbacks(it) }
             ticker = null
-            player.release()
-            producer.release()
+            try {
+                player.release()
+            } catch (_: Throwable) {
+            }
+            try {
+                producer.release()
+            } catch (_: Throwable) {
+            }
         }
     }
 }
