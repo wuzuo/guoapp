@@ -36,7 +36,7 @@ func TestHongguoRankingMergeLoaderFormatsPreserveMetadata(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(merged, legacy) {
 				t.Fatal("merged and streamed formats differ", board.ID, page, err)
 			}
-			if merged.Items[0].Drama.TotalEpisode != 2 || merged.Items[0].Drama.Score != "9.0" || merged.Items[0].Drama.Title != rows[0]["title"] {
+			if merged.Items[0].Drama.TotalEpisode != 88 || merged.Items[0].Drama.Score != "9.0" || merged.Items[0].Drama.Title != rows[0]["title"] {
 				t.Fatal("lost episode, score or escaped text metadata")
 			}
 		}

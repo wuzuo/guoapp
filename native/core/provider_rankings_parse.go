@@ -17,16 +17,18 @@ var rankingSourceID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 type hongguoRankingContent struct {
 	Success bool `json:"isSuccess"`
 	Rows    []struct {
-		ID          string   `json:"id"`
-		SeriesID    string   `json:"seriesId"`
-		Rank        int      `json:"rank"`
-		Title       string   `json:"title"`
-		Heat        string   `json:"heatText"`
-		Score       string   `json:"scoreText"`
-		Tags        []string `json:"tags"`
-		Description string   `json:"description"`
-		EpisodeIDs  []string `json:"episodeVids"`
-		Cover       any      `json:"cover"`
+		ID               string   `json:"id"`
+		SeriesID         string   `json:"seriesId"`
+		Rank             int      `json:"rank"`
+		Title            string   `json:"title"`
+		Heat             string   `json:"heatText"`
+		Score            string   `json:"scoreText"`
+		Tags             []string `json:"tags"`
+		Description      string   `json:"description"`
+		EpisodeIDs       []string `json:"episodeVids"`
+		EpisodeCount     any      `json:"episodeCount"`
+		OpenEpisodeCount any      `json:"openEpisodeCount"`
+		Cover            any      `json:"cover"`
 	} `json:"rankList"`
 	Pagination struct {
 		Page       int `json:"pageNum"`
@@ -87,8 +89,13 @@ func parseHongguoRanking(body string, board rankingBoard, page int) (rankingPage
 		if len(row.Tags) > 0 {
 			drama.CategoryName = row.Tags[0]
 		}
-		if len(row.EpisodeIDs) > 0 {
-			drama.TotalEpisode = len(row.EpisodeIDs)
+		// episodeVids 只含可试看分集，总集数取 episodeCount；缺失时才退回可试看数量。
+		count, _ := strconv.Atoi(nativeText(row.EpisodeCount))
+		if count <= 0 {
+			count = len(row.EpisodeIDs)
+		}
+		if count > 0 {
+			drama.TotalEpisode, drama.EpisodeCount = count, count
 		}
 		result.Items = append(result.Items, rankingItem{Rank: row.Rank, Drama: drama, Metric: row.Heat})
 	}
