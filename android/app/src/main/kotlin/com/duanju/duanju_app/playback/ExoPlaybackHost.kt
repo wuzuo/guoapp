@@ -157,6 +157,10 @@ class ExoPlaybackHost(
                     send("error", mapOf("message" to (error.message ?: error.errorCodeName)))
                 }
             })
+            try {
+                player.setVideoSurface(producer.surface)
+            } catch (_: Throwable) {
+            }
             startTicker()
         }
 

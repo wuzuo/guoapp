@@ -122,7 +122,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? _saveWarning;
   PlaybackPlan? _plan;
   double _speed = 1;
-  double _aspectRatio = 9 / 16;
+  double _aspectRatio = 16 / 9;
   double _resumePosition = 0;
   bool _rotating = false;
   bool _television = false;
