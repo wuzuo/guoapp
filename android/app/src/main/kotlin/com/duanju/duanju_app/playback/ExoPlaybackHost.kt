@@ -7,6 +7,7 @@ import android.view.Surface
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -14,9 +15,11 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -100,14 +103,16 @@ class ExoPlaybackHost(
         )
             .setLoadControl(
                 DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(15000, 30000, 1000, 2000)
-                    .setTargetBufferBytes(12 * 1024 * 1024)
+                    .setBufferDurationsMs(30000, 120000, 1000, 2000)
+                    .setTargetBufferBytes(64 * 1024 * 1024)
+                    .setPrioritizeTimeOverSizeThresholds(false)
                     .build(),
             )
             .build()
 
         private var ticker: Runnable? = null
         private var attached: Surface? = null
+        private var dropped = 0
         private var released = false
 
         init {
@@ -132,6 +137,47 @@ class ExoPlaybackHost(
 
                 override fun onSurfaceCleanup() = detachSurface()
             })
+            player.addAnalyticsListener(object : AnalyticsListener {
+                override fun onVideoInputFormatChanged(
+                    eventTime: AnalyticsListener.EventTime,
+                    format: Format,
+                    decoderReuseEvaluation: DecoderReuseEvaluation?,
+                ) {
+                    Log.i(
+                        TAG,
+                        "视频流 ${format.sampleMimeType} ${format.width}x${format.height} " +
+                            "${format.frameRate}fps ${format.bitrate}bps",
+                    )
+                }
+
+                override fun onVideoDecoderInitialized(
+                    eventTime: AnalyticsListener.EventTime,
+                    decoderName: String,
+                    initializedTimestampMs: Long,
+                    initializationDurationMs: Long,
+                ) {
+                    Log.i(TAG, "解码器 $decoderName 初始化 ${initializationDurationMs}ms")
+                    send("decoder", mapOf("name" to decoderName))
+                }
+
+                override fun onDroppedVideoFrames(
+                    eventTime: AnalyticsListener.EventTime,
+                    droppedFrames: Int,
+                    elapsedMs: Long,
+                ) {
+                    dropped += droppedFrames
+                    Log.w(TAG, "丢帧 $droppedFrames 累计 $dropped 耗时 ${elapsedMs}ms")
+                }
+
+                override fun onAudioUnderrun(
+                    eventTime: AnalyticsListener.EventTime,
+                    bufferSize: Int,
+                    bufferSizeMs: Long,
+                    elapsedSinceLastFeedMs: Long,
+                ) {
+                    Log.w(TAG, "音频欠载 buffer=$bufferSize 滞后 ${elapsedSinceLastFeedMs}ms")
+                }
+            })
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     emitState()
@@ -146,6 +192,7 @@ class ExoPlaybackHost(
                 }
 
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
+                    Log.i(TAG, "尺寸回调 ${videoSize.width}x${videoSize.height}")
                     if (videoSize.width <= 0 || videoSize.height <= 0) return
                     resizeSurface(videoSize.width, videoSize.height)
                     send(
@@ -160,7 +207,8 @@ class ExoPlaybackHost(
                 }
             })
             try {
-                producer.setSize(1280, 720)
+                val initial = surfaceSize(1280, 720)
+                producer.setSize(initial.first, initial.second)
             } catch (_: Throwable) {
             }
             attachSurface()
@@ -206,14 +254,29 @@ class ExoPlaybackHost(
 
         private fun resizeSurface(width: Int, height: Int) {
             if (released) return
-            if (producer.width == width && producer.height == height) return
+            val target = surfaceSize(width, height)
+            if (producer.width == target.first && producer.height == target.second) return
             detachSurface()
             try {
-                producer.setSize(width, height)
+                producer.setSize(target.first, target.second)
+                Log.i(TAG, "纹理 ${target.first}x${target.second}（视频 ${width}x$height）")
             } catch (error: Throwable) {
                 Log.w(TAG, "resize failed", error)
             }
             attachSurface()
+        }
+
+        private fun surfaceSize(width: Int, height: Int): Pair<Int, Int> {
+            val metrics = context.resources.displayMetrics
+            val maxWidth = metrics.widthPixels
+            val maxHeight = metrics.heightPixels
+            if (width <= maxWidth && height <= maxHeight) {
+                return width.coerceAtLeast(2) to height.coerceAtLeast(2)
+            }
+            val scale = minOf(maxWidth.toDouble() / width, maxHeight.toDouble() / height)
+            val scaledWidth = ((width * scale).toInt() / 2 * 2).coerceAtLeast(2)
+            val scaledHeight = ((height * scale).toInt() / 2 * 2).coerceAtLeast(2)
+            return scaledWidth to scaledHeight
         }
 
         private fun startTicker() {
@@ -221,11 +284,11 @@ class ExoPlaybackHost(
                 override fun run() {
                     if (released) return
                     emitState()
-                    main.postDelayed(this, 40)
+                    main.postDelayed(this, 100)
                 }
             }
             ticker = runnable
-            main.postDelayed(runnable, 40)
+            main.postDelayed(runnable, 100)
         }
 
         fun send(type: String, fields: Map<String, Any?>) {
@@ -253,6 +316,7 @@ class ExoPlaybackHost(
                         "buffered" to buffered,
                         "rate" to player.playbackParameters.speed.toDouble(),
                         "volume" to player.volume.toDouble(),
+                        "dropped" to dropped,
                     ),
                 )
             } catch (_: Throwable) {

@@ -39,7 +39,7 @@ class CencDataSource(private val video: RemoteVideo) : BaseDataSource(true) {
         if (length == 0) return 0
         if (remaining == 0L) return C.RESULT_END_OF_INPUT
         if (offset >= buffer.size) {
-            buffer = video.read(position, minOf(512 * 1024L, remaining).toInt())
+            buffer = video.read(position, minOf(1024 * 1024L, remaining).toInt())
             offset = 0
         }
         if (buffer.isEmpty()) throw EOFException("视频分段意外结束")

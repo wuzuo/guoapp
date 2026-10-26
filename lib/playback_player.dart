@@ -23,6 +23,8 @@ class PlaybackState {
     this.volume = 100,
     this.video,
     this.mediaUri = '',
+    this.decoder = '',
+    this.dropped = 0,
   });
 
   final Duration position;
@@ -35,6 +37,8 @@ class PlaybackState {
   final double volume;
   final PlaybackVideoSize? video;
   final String mediaUri;
+  final String decoder;
+  final int dropped;
 
   int? get width => video?.width;
 
@@ -51,6 +55,8 @@ class PlaybackState {
     double? volume,
     PlaybackVideoSize? video,
     String? mediaUri,
+    String? decoder,
+    int? dropped,
   }) => PlaybackState(
     position: position ?? this.position,
     duration: duration ?? this.duration,
@@ -62,6 +68,8 @@ class PlaybackState {
     volume: volume ?? this.volume,
     video: video ?? this.video,
     mediaUri: mediaUri ?? this.mediaUri,
+    decoder: decoder ?? this.decoder,
+    dropped: dropped ?? this.dropped,
   );
 }
 

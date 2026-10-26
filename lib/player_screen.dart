@@ -19,6 +19,7 @@ import 'playback_loader.dart';
 import 'playback_preloader.dart';
 import 'playback_recovery.dart';
 import 'playback_preferences.dart';
+import 'playback_stats.dart';
 import 'player_keys.dart';
 import 'player_controls.dart';
 import 'player_interactions.dart';
@@ -166,6 +167,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _frameMode = preferences.frameMode;
     _hardwareDecoding = preferences.hardwareDecoding;
     _keyMap = preferences.keyMap;
+    if (AppLayout.isTelevisionNow(context)) FrameStats.install();
     _loader = PlaybackLoader(widget.repository);
     _preloader = PlaybackPreloader(widget.repository);
     _danmaku = DanmakuController(widget.repository)
@@ -917,6 +919,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  String get _engineInfo {
+    final state = _player.state;
+    final parts = <String>[];
+    if (state.decoder.isNotEmpty) parts.add('解码器 ${state.decoder}');
+    if (state.width != null && state.height != null) {
+      parts.add('${state.width}x${state.height}');
+    }
+    if (state.dropped > 0) parts.add('丢帧 ${state.dropped}');
+    return parts.join(' · ');
+  }
+
   bool get _showFullscreen =>
       _television ||
       _fullscreen ||
@@ -1056,6 +1069,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               danmakuStatus: _danmaku.status,
               onRetryDanmaku: _danmaku.canRetry ? _danmaku.retry : null,
               preloadStatus: _preloader.status,
+              engineInfo: _engineInfo,
               onFavorite: () =>
                   widget.store.toggleFavorite(widget.detail.drama),
             ),

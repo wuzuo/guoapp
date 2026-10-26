@@ -122,6 +122,7 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
           completed: completed,
           rate: (event['rate'] as num?)?.toDouble() ?? _state.rate,
           volume: volume,
+          dropped: (event['dropped'] as num?)?.toInt() ?? _state.dropped,
         );
         _position.add(_state.position);
         _buffer.add(_state.buffer);
@@ -168,6 +169,9 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
           _state = _state.copyWith(video: size);
           _video.add(size);
         }
+      case 'decoder':
+        final name = (event['name'] as String? ?? '').trim();
+        if (name.isNotEmpty) _state = _state.copyWith(decoder: name);
       case 'error':
         final message = (event['message'] as String? ?? '').trim();
         if (message.isNotEmpty) _error.add(message);

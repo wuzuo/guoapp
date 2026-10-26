@@ -29,6 +29,7 @@ class PlayerMenu extends StatefulWidget {
     this.danmakuStatus = '',
     this.onRetryDanmaku,
     this.preloadStatus = '',
+    this.engineInfo = '',
   });
 
   final PlayerMenuSection section;
@@ -44,6 +45,7 @@ class PlayerMenu extends StatefulWidget {
   final String danmakuStatus;
   final VoidCallback? onRetryDanmaku;
   final String preloadStatus;
+  final String engineInfo;
   final ValueChanged<int> onEpisode;
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
@@ -349,6 +351,14 @@ class _PlayerMenuState extends State<PlayerMenu> {
             label: Text(widget.favorite ? '取消追剧' : '加入追剧'),
           ),
           const SizedBox(height: 20),
+          if (widget.engineInfo.isNotEmpty) ...[
+            Text(
+              widget.engineInfo,
+              key: const ValueKey('player-engine-info'),
+              style: const TextStyle(fontSize: 12, color: Colors.white54),
+            ),
+            const SizedBox(height: 12),
+          ],
           Text(
             widget.mobile
                 ? '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。'

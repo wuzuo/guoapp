@@ -51,6 +51,7 @@ class RemoteVideo(
             requestMethod = "GET"
             setRequestProperty("Range", "bytes=$start-$end")
             setRequestProperty("Accept-Encoding", "identity")
+            setRequestProperty("Connection", "keep-alive")
             headers.forEach { (name, value) -> setRequestProperty(name, value) }
         }
         try {
@@ -75,8 +76,9 @@ class RemoteVideo(
                 }
             }
             return Chunk(bytes, full)
-        } finally {
+        } catch (error: Throwable) {
             connection.disconnect()
+            throw error
         }
     }
 }
