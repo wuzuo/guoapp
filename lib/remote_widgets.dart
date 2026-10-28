@@ -110,6 +110,7 @@ class RemoteButton extends StatelessWidget {
     this.selected = false,
     this.autofocus = false,
     this.focusNode,
+    this.dense = false,
   });
   final String label;
   final VoidCallback? onPressed;
@@ -117,6 +118,7 @@ class RemoteButton extends StatelessWidget {
   final bool selected;
   final bool autofocus;
   final FocusNode? focusNode;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) => RemoteTarget(
@@ -126,15 +128,20 @@ class RemoteButton extends StatelessWidget {
     focusNode: focusNode,
     label: label,
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: dense
+          ? const EdgeInsets.symmetric(horizontal: 9, vertical: 6)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[Icon(icon, size: 22), const SizedBox(width: 8)],
+          if (icon != null) ...[
+            Icon(icon, size: dense ? 18 : 22),
+            SizedBox(width: dense ? 5 : 8),
+          ],
           Text(
             label,
             style: TextStyle(
-              fontSize: 17,
+              fontSize: dense ? 13 : 17,
               color: onPressed == null
                   ? Theme.of(context).disabledColor
                   : Theme.of(context).colorScheme.onSurface,

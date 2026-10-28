@@ -333,114 +333,177 @@ class _PlayerControlsState extends State<PlayerControls> {
                                 children: [
                                   if (widget.fullscreen &&
                                       constraints.maxHeight >= 240)
-                                    SingleChildScrollView(
-                                      scrollDirection: Axis.horizontal,
-                                      child: Row(
-                                        children: [
-                                          RemoteButton(
-                                            key: const ValueKey(
-                                              'player-previous',
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              children: [
+                                                RemoteButton(
+                                                  key: const ValueKey(
+                                                    'player-previous',
+                                                  ),
+                                                  dense: true,
+                                                  label: '上一集',
+                                                  icon: Icons
+                                                      .skip_previous_rounded,
+                                                  onPressed: widget.onPrevious,
+                                                ),
+                                                RemoteButton(
+                                                  key: const ValueKey(
+                                                    'player-play-pause',
+                                                  ),
+                                                  dense: true,
+                                                  label: state.playing
+                                                      ? '暂停'
+                                                      : '播放',
+                                                  icon: state.playing
+                                                      ? Icons.pause_rounded
+                                                      : Icons
+                                                            .play_arrow_rounded,
+                                                  onPressed: widget.enabled
+                                                      ? widget.onTogglePlayback
+                                                      : null,
+                                                ),
+                                                RemoteButton(
+                                                  key: const ValueKey(
+                                                    'player-next',
+                                                  ),
+                                                  dense: true,
+                                                  label: '下一集',
+                                                  icon: Icons.skip_next_rounded,
+                                                  onPressed: widget.onNext,
+                                                ),
+                                                RemoteButton(
+                                                  key: const ValueKey(
+                                                    'player-episodes',
+                                                  ),
+                                                  dense: true,
+                                                  label: '选集',
+                                                  icon: Icons.grid_view_rounded,
+                                                  onPressed: () =>
+                                                      _panel(widget.onEpisodes),
+                                                ),
+                                                RemoteButton(
+                                                  key: const ValueKey(
+                                                    'player-speed',
+                                                  ),
+                                                  dense: true,
+                                                  label: '${widget.speed}x',
+                                                  icon: Icons.speed_rounded,
+                                                  onPressed: () =>
+                                                      _panel(widget.onSpeed),
+                                                ),
+                                                RemoteButton(
+                                                  key: const ValueKey(
+                                                    'player-quality',
+                                                  ),
+                                                  dense: true,
+                                                  label: widget.qualityLabel,
+                                                  icon: Icons.hd_rounded,
+                                                  onPressed: () =>
+                                                      _panel(widget.onQuality),
+                                                ),
+                                              ],
                                             ),
-                                            label: '上一集',
-                                            icon: Icons.skip_previous_rounded,
-                                            onPressed: widget.onPrevious,
                                           ),
-                                          RemoteButton(
-                                            key: const ValueKey(
-                                              'player-play-pause',
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          '${formatPosition(_seekValue ?? position)} / ${formatPosition(duration)}',
+                                          maxLines: 1,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                        if (!widget.swipeEnabled)
+                                          IconButton(
+                                            tooltip: state.volume == 0
+                                                ? '取消静音'
+                                                : '静音',
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            iconSize: 20,
+                                            onPressed: widget.enabled
+                                                ? widget.interactions.toggleMute
+                                                : null,
+                                            icon: Icon(
+                                              state.volume == 0
+                                                  ? Icons.volume_off_rounded
+                                                  : Icons.volume_up_rounded,
                                             ),
-                                            label: state.playing ? '暂停' : '播放',
-                                            icon: state.playing
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
+                                          ),
+                                        IconButton(
+                                          tooltip: widget.fullscreen
+                                              ? '退出全屏'
+                                              : '旋转与全屏',
+                                          visualDensity: VisualDensity.compact,
+                                          iconSize: 20,
+                                          onPressed: widget.onFullscreen,
+                                          icon: Icon(
+                                            widget.fullscreen
+                                                ? Icons.fullscreen_exit_rounded
+                                                : Icons.fullscreen_rounded,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    Row(
+                                      children: [
+                                        if (constraints.maxHeight < 300)
+                                          IconButton(
+                                            tooltip: state.playing
+                                                ? '暂停'
+                                                : '播放',
                                             onPressed: widget.enabled
                                                 ? widget.onTogglePlayback
                                                 : null,
-                                          ),
-                                          RemoteButton(
-                                            key: const ValueKey('player-next'),
-                                            label: '下一集',
-                                            icon: Icons.skip_next_rounded,
-                                            onPressed: widget.onNext,
-                                          ),
-                                          RemoteButton(
-                                            key: const ValueKey(
-                                              'player-episodes',
+                                            icon: Icon(
+                                              state.playing
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
                                             ),
-                                            label: '选集',
-                                            icon: Icons.grid_view_rounded,
-                                            onPressed: () =>
-                                                _panel(widget.onEpisodes),
                                           ),
-                                          RemoteButton(
-                                            key: const ValueKey('player-speed'),
-                                            label: '${widget.speed}x',
-                                            icon: Icons.speed_rounded,
-                                            onPressed: () =>
-                                                _panel(widget.onSpeed),
-                                          ),
-                                          RemoteButton(
-                                            key: const ValueKey(
-                                              'player-quality',
+                                        Expanded(
+                                          child: Text(
+                                            '${formatPosition(_seekValue ?? position)} / ${formatPosition(duration)}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
                                             ),
-                                            label: widget.qualityLabel,
-                                            icon: Icons.hd_rounded,
-                                            onPressed: () =>
-                                                _panel(widget.onQuality),
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        if (!widget.swipeEnabled)
+                                          IconButton(
+                                            tooltip: state.volume == 0
+                                                ? '取消静音'
+                                                : '静音',
+                                            onPressed: widget.enabled
+                                                ? widget.interactions.toggleMute
+                                                : null,
+                                            icon: Icon(
+                                              state.volume == 0
+                                                  ? Icons.volume_off_rounded
+                                                  : Icons.volume_up_rounded,
+                                            ),
+                                          ),
+                                        IconButton(
+                                          tooltip: widget.fullscreen
+                                              ? '退出全屏'
+                                              : '旋转与全屏',
+                                          onPressed: widget.onFullscreen,
+                                          icon: Icon(
+                                            widget.fullscreen
+                                                ? Icons.fullscreen_exit_rounded
+                                                : Icons.fullscreen_rounded,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  Row(
-                                    children: [
-                                      if (constraints.maxHeight <
-                                          (widget.fullscreen ? 420 : 300))
-                                        IconButton(
-                                          tooltip: state.playing ? '暂停' : '播放',
-                                          onPressed: widget.enabled
-                                              ? widget.onTogglePlayback
-                                              : null,
-                                          icon: Icon(
-                                            state.playing
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
-                                          ),
-                                        ),
-                                      Expanded(
-                                        child: Text(
-                                          '${formatPosition(_seekValue ?? position)} / ${formatPosition(duration)}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                      ),
-                                      if (!widget.swipeEnabled)
-                                        IconButton(
-                                          tooltip: state.volume == 0
-                                              ? '取消静音'
-                                              : '静音',
-                                          onPressed: widget.enabled
-                                              ? widget.interactions.toggleMute
-                                              : null,
-                                          icon: Icon(
-                                            state.volume == 0
-                                                ? Icons.volume_off_rounded
-                                                : Icons.volume_up_rounded,
-                                          ),
-                                        ),
-                                      IconButton(
-                                        tooltip: widget.fullscreen
-                                            ? '退出全屏'
-                                            : '旋转与全屏',
-                                        onPressed: widget.onFullscreen,
-                                        icon: Icon(
-                                          widget.fullscreen
-                                              ? Icons.fullscreen_exit_rounded
-                                              : Icons.fullscreen_rounded,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                                   if (widget.showProgress)
                                     _ProgressTrack(
                                       key: const ValueKey('player-progress'),
