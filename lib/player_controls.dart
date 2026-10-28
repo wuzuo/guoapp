@@ -29,6 +29,7 @@ class PlayerControls extends StatefulWidget {
     this.swipeEnabled = false,
     this.panelOpen = false,
     this.seamless = false,
+    this.showProgress = true,
     this.onSeek,
     this.onPush,
   });
@@ -52,6 +53,7 @@ class PlayerControls extends StatefulWidget {
   final bool swipeEnabled;
   final bool panelOpen;
   final bool seamless;
+  final bool showProgress;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function()? onPush;
 
@@ -413,52 +415,55 @@ class _PlayerControlsState extends State<PlayerControls> {
                                         ],
                                       ),
                                     ),
-                                  SliderTheme(
-                                    data: SliderTheme.of(
-                                      context,
-                                    ).copyWith(trackHeight: 2),
-                                    child: Slider(
-                                      key: const ValueKey('player-progress'),
-                                      value: (_seekValue ?? position).clamp(
-                                        0,
-                                        duration > 0 ? duration : 1,
+                                  if (widget.showProgress)
+                                    SliderTheme(
+                                      data: SliderTheme.of(
+                                        context,
+                                      ).copyWith(trackHeight: 2),
+                                      child: Slider(
+                                        key: const ValueKey('player-progress'),
+                                        value: (_seekValue ?? position).clamp(
+                                          0,
+                                          duration > 0 ? duration : 1,
+                                        ),
+                                        max: duration > 0 ? duration : 1,
+                                        secondaryTrackValue: buffered.clamp(
+                                          0,
+                                          duration > 0 ? duration : 1,
+                                        ),
+                                        semanticFormatterCallback:
+                                            formatPosition,
+                                        onChangeStart:
+                                            widget.enabled && duration > 0
+                                            ? (_) {
+                                                widget.interactions.cancel();
+                                                _hideTimer?.cancel();
+                                              }
+                                            : null,
+                                        onChanged:
+                                            !widget.enabled || duration <= 0
+                                            ? null
+                                            : (value) {
+                                                _hideTimer?.cancel();
+                                                setState(
+                                                  () => _seekValue = value,
+                                                );
+                                              },
+                                        onChangeEnd: (value) {
+                                          if (widget.enabled && duration > 0) {
+                                            (widget.onSeek ??
+                                                widget.player.seek)(
+                                              Duration(
+                                                milliseconds: (value * 1000)
+                                                    .round(),
+                                              ),
+                                            );
+                                          }
+                                          setState(() => _seekValue = null);
+                                          _show(user: true);
+                                        },
                                       ),
-                                      max: duration > 0 ? duration : 1,
-                                      secondaryTrackValue: buffered.clamp(
-                                        0,
-                                        duration > 0 ? duration : 1,
-                                      ),
-                                      semanticFormatterCallback: formatPosition,
-                                      onChangeStart:
-                                          widget.enabled && duration > 0
-                                          ? (_) {
-                                              widget.interactions.cancel();
-                                              _hideTimer?.cancel();
-                                            }
-                                          : null,
-                                      onChanged:
-                                          !widget.enabled || duration <= 0
-                                          ? null
-                                          : (value) {
-                                              _hideTimer?.cancel();
-                                              setState(
-                                                () => _seekValue = value,
-                                              );
-                                            },
-                                      onChangeEnd: (value) {
-                                        if (widget.enabled && duration > 0) {
-                                          (widget.onSeek ?? widget.player.seek)(
-                                            Duration(
-                                              milliseconds: (value * 1000)
-                                                  .round(),
-                                            ),
-                                          );
-                                        }
-                                        setState(() => _seekValue = null);
-                                        _show(user: true);
-                                      },
                                     ),
-                                  ),
                                 ],
                               ),
                             ),

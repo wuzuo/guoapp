@@ -123,6 +123,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? _saveWarning;
   PlaybackPlan? _plan;
   double _speed = 1;
+  double? _desktopSeek;
   double _aspectRatio = 16 / 9;
   double _resumePosition = 0;
   bool _rotating = false;
@@ -1311,8 +1312,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                         Expanded(
                           child: Column(
                             children: [
-                              Expanded(child: _videoPane(context)),
+                              Expanded(
+                                child: _videoPane(
+                                  context,
+                                  overlayProgress: false,
+                                ),
+                              ),
                               _actionBar(episode),
+                              _desktopProgress(),
                             ],
                           ),
                         ),
@@ -1503,7 +1510,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     ),
   );
 
-  Widget _videoPane(BuildContext context) {
+  Widget _videoPane(BuildContext context, {bool overlayProgress = true}) {
     final title =
         '${widget.detail.drama.title} · 第 ${widget.detail.episodes[_index].number} 集${_plan?.local == true ? ' · 本地' : ''}${widget.detail.episodes[_index].vip ? ' · VIP 试看' : ''}${(_plan?.routeIndex ?? 0) > 0 ? ' · 线路 ${_plan!.routeIndex + 1}' : ''}';
     final Widget controls = _television
@@ -1533,6 +1540,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             title: title,
             onTogglePlayback: _togglePlayback,
             swipeEnabled: _mobile,
+            showProgress: overlayProgress,
             onFullscreen: _rotate,
             onFocusSurface: _playerFocus.requestFocus,
             onSeek: _seekTo,
@@ -1658,6 +1666,52 @@ class _PlayerScreenState extends State<PlayerScreen>
       ],
     );
   }
+
+  Widget _desktopProgress() => ColoredBox(
+    color: const Color(0xFF191A20),
+    child: SizedBox(
+      height: 34,
+      child: StreamBuilder<Duration>(
+        stream: _player.stream.position,
+        initialData: _player.state.position,
+        builder: (context, positionSnapshot) => StreamBuilder<Duration>(
+          stream: _player.stream.buffer,
+          initialData: _player.state.buffer,
+          builder: (context, bufferSnapshot) {
+            final state = _player.state;
+            final seconds = state.duration.inMilliseconds / 1000;
+            final limit = seconds > 0 ? seconds : 1.0;
+            final position =
+                (positionSnapshot.data ?? state.position).inMilliseconds / 1000;
+            final buffer =
+                (bufferSnapshot.data ?? state.buffer).inMilliseconds / 1000;
+            return SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              ),
+              child: Slider(
+                key: const ValueKey('desktop-progress'),
+                value: (_desktopSeek ?? position).clamp(0.0, limit),
+                max: limit,
+                secondaryTrackValue: buffer.clamp(0.0, limit),
+                onChanged: _error == null && seconds > 0
+                    ? (next) => setState(() => _desktopSeek = next)
+                    : null,
+                onChangeEnd: (next) {
+                  setState(() => _desktopSeek = null);
+                  unawaited(
+                    _seekTo(Duration(milliseconds: (next * 1000).round())),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+      ),
+    ),
+  );
 
   Widget _actionBar(Episode episode) => Container(
     color: const Color(0xFF191A20),
