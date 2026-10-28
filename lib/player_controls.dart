@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'player_interactions.dart';
-import 'playback_buffer.dart';
 import 'widgets.dart';
 import 'lan_screen.dart';
 import 'playback_player.dart';
@@ -329,57 +328,6 @@ class _PlayerControlsState extends State<PlayerControls> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  SliderTheme(
-                                    data: SliderTheme.of(
-                                      context,
-                                    ).copyWith(trackHeight: 3),
-                                    child: Slider(
-                                      key: const ValueKey('player-progress'),
-                                      value: (_seekValue ?? position).clamp(
-                                        0,
-                                        duration > 0 ? duration : 1,
-                                      ),
-                                      max: duration > 0 ? duration : 1,
-                                      secondaryTrackValue: buffered.clamp(
-                                        0,
-                                        duration > 0 ? duration : 1,
-                                      ),
-                                      semanticFormatterCallback: formatPosition,
-                                      onChangeStart:
-                                          widget.enabled && duration > 0
-                                          ? (_) {
-                                              widget.interactions.cancel();
-                                              _hideTimer?.cancel();
-                                            }
-                                          : null,
-                                      onChanged:
-                                          !widget.enabled || duration <= 0
-                                          ? null
-                                          : (value) {
-                                              _hideTimer?.cancel();
-                                              setState(
-                                                () => _seekValue = value,
-                                              );
-                                            },
-                                      onChangeEnd: (value) {
-                                        if (widget.enabled && duration > 0) {
-                                          (widget.onSeek ?? widget.player.seek)(
-                                            Duration(
-                                              milliseconds: (value * 1000)
-                                                  .round(),
-                                            ),
-                                          );
-                                        }
-                                        setState(() => _seekValue = null);
-                                        _show(user: true);
-                                      },
-                                    ),
-                                  ),
-                                  if (constraints.maxHeight >= 240)
-                                    PlaybackBufferStatus(
-                                      player: widget.player,
-                                      enabled: widget.enabled,
-                                    ),
                                   Row(
                                     children: [
                                       if (constraints.maxHeight <
@@ -465,6 +413,52 @@ class _PlayerControlsState extends State<PlayerControls> {
                                         ],
                                       ),
                                     ),
+                                  SliderTheme(
+                                    data: SliderTheme.of(
+                                      context,
+                                    ).copyWith(trackHeight: 2),
+                                    child: Slider(
+                                      key: const ValueKey('player-progress'),
+                                      value: (_seekValue ?? position).clamp(
+                                        0,
+                                        duration > 0 ? duration : 1,
+                                      ),
+                                      max: duration > 0 ? duration : 1,
+                                      secondaryTrackValue: buffered.clamp(
+                                        0,
+                                        duration > 0 ? duration : 1,
+                                      ),
+                                      semanticFormatterCallback: formatPosition,
+                                      onChangeStart:
+                                          widget.enabled && duration > 0
+                                          ? (_) {
+                                              widget.interactions.cancel();
+                                              _hideTimer?.cancel();
+                                            }
+                                          : null,
+                                      onChanged:
+                                          !widget.enabled || duration <= 0
+                                          ? null
+                                          : (value) {
+                                              _hideTimer?.cancel();
+                                              setState(
+                                                () => _seekValue = value,
+                                              );
+                                            },
+                                      onChangeEnd: (value) {
+                                        if (widget.enabled && duration > 0) {
+                                          (widget.onSeek ?? widget.player.seek)(
+                                            Duration(
+                                              milliseconds: (value * 1000)
+                                                  .round(),
+                                            ),
+                                          );
+                                        }
+                                        setState(() => _seekValue = null);
+                                        _show(user: true);
+                                      },
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
