@@ -50,12 +50,15 @@ class _RemoteTargetState extends State<RemoteTarget> {
       if (focused) {
         widget.onFocus?.call();
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _focused) {
-            Scrollable.ensureVisible(
-              context,
-              alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-            );
-          }
+          if (!mounted || !_focused) return;
+          Scrollable.ensureVisible(
+            context,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+          );
+          Scrollable.ensureVisible(
+            context,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          );
         });
       }
     },
