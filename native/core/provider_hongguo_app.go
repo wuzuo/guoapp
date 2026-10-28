@@ -8,13 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-		"net/url"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 )
 
 const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
+
+var errHongguoBlankResponse = errors.New("红果 App 接口未返回有效数据")
+
+const hongguoDeviceRotateInterval = 90 * time.Second
 
 // 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
 var hongguoCommentHosts = []string{
@@ -83,6 +87,17 @@ type hongguoAppClient struct {
 	registerDone chan struct{}
 	registerAt   time.Time
 	registerErr  error
+
+	playback hongguoPlaybackIdentity
+	rotateAt time.Time
+}
+
+type hongguoPlaybackIdentity struct {
+	DeviceID  string
+	InstallID string
+	Cdid      string
+	Cookies   map[string]string
+	Ready     bool
 }
 
 func (downloader *Downloader) hongguoClient() *hongguoAppClient {
@@ -181,12 +196,47 @@ func hongguoCatalogHasMore(state *hongguoCatalogState) bool {
 }
 
 func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {
-	_ = downloader.ensureHongguoDevice(ctx)
+	result, err := downloader.hongguoAppRequestOnce(ctx, method, path, extra, payload)
+	if err == nil || !isHongguoBlankResponseError(err) {
+		return result, err
+	}
+	if !downloader.rotateHongguoIdentity(ctx, strings.Contains(path, "/player/")) {
+		return result, err
+	}
+	return downloader.hongguoAppRequestOnce(ctx, method, path, extra, payload)
+}
+
+func (downloader *Downloader) hongguoAppRequestOnce(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {
+	playback := strings.Contains(path, "/player/")
+	cdid := ""
 	client := downloader.hongguoClient()
+	if playback {
+		identity := downloader.hongguoPlaybackProfile(ctx)
+		cdid = identity.Cdid
+		client.mu.Lock()
+		base := client.baseURL
+		client.mu.Unlock()
+		deviceID, installID, registered, cookies := identity.DeviceID, identity.InstallID, identity.Ready, identity.Cookies
+		return downloader.hongguoAppSend(ctx, method, path, extra, payload, base, deviceID, installID, registered, cookies, cdid)
+	}
+	_ = downloader.ensureHongguoDevice(ctx)
 	client.mu.Lock()
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID
 	registered, cookies := client.state.Registered, client.state.Cookies
 	client.mu.Unlock()
+	return downloader.hongguoAppSend(ctx, method, path, extra, payload, base, deviceID, installID, registered, cookies, cdid)
+}
+
+func (downloader *Downloader) hongguoAppSend(
+	ctx context.Context,
+	method, path string,
+	extra url.Values,
+	payload any,
+	base, deviceID, installID string,
+	registered bool,
+	cookies map[string]string,
+	cdid string,
+) (map[string]any, error) {
 	// 评论/弹幕接口与参考 commentWindow 一致：匿名请求，不带设备注册 Cookie（withSession 不应用于评论）。
 	cookie := ""
 	if isComment, _ := ctx.Value(hongguoCommentKey{}).(bool); !isComment {
@@ -203,6 +253,9 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		versionCode, versionName = v.code, v.name
 	}
 	profile := hgDeviceQuery(deviceID, installID, versionCode, versionName)
+	if cdid != "" {
+		profile = append(profile, [2]string{"cdid", cdid})
+	}
 	for key, values := range extra {
 		if len(values) == 0 {
 			continue
@@ -228,12 +281,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			return nil, err
 		}
 	}
-		// UA 与参考实现 Signer.sign 一致：带请求体（播放取流、弹幕/评论写接口）用 VIDEO_UA（71332），
-		// 否则用 App UA（72232）。弹幕路径虽不含 /player/，但带 body 且走评论通道，故用 VIDEO_UA；
-		// 这与 commentWindow 用 appValues（版本 72232）并存，正是参考实现的组合。
-		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
-		isVideo := strings.Contains(path, "/player/") || (payload != nil && comment)
-		// 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
+	// UA 与参考实现 Signer.sign 一致：带请求体（播放取流、弹幕/评论写接口）用 VIDEO_UA（71332），
+	// 否则用 App UA（72232）。弹幕路径虽不含 /player/，但带 body 且走评论通道，故用 VIDEO_UA；
+	// 这与 commentWindow 用 appValues（版本 72232）并存，正是参考实现的组合。
+	comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
+	isVideo := strings.Contains(path, "/player/") || (payload != nil && comment)
+	// 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
 	hosts := []string{base}
 	if comment {
 		hosts = append([]string{base}, hongguoCommentHosts...)
@@ -243,6 +296,9 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		attempts = 1
 	}
 	if attempts > 3 {
+		attempts = 3
+	}
+	if !comment && attempts < 3 {
 		attempts = 3
 	}
 	if comment && len(hosts) > attempts {
@@ -310,8 +366,19 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			}
 			continue
 		}
-		if len(content) == 0 || len(content) > providerMaxBodyBytes {
-			return nil, errors.New("红果 App 接口未返回有效数据")
+		if len(content) > providerMaxBodyBytes {
+			return nil, errors.New("红果 App 接口返回内容过大")
+		}
+		if len(content) == 0 {
+			lastErr = errHongguoBlankResponse
+			if attempt < attempts-1 {
+				select {
+				case <-time.After(time.Duration(attempt+1) * 300 * time.Millisecond):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			continue
 		}
 		var result map[string]any
 		decoder := json.NewDecoder(bytes.NewReader(content))

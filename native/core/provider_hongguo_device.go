@@ -88,56 +88,56 @@ func hongguoTTEncrypt(payload []byte) ([]byte, error) {
 func hongguoRegisterPayload(now time.Time) ([]byte, error) {
 	millis := now.UnixMilli()
 	header := map[string]any{
-		"display_name":             "红果免费短剧",
-		"update_version_code":      73932,
-		"manifest_version_code":    73932,
-		"app_version_minor":        "7.3.9.32",
-		"aid":                      8662,
-		"channel":                  "69310258a",
-		"package":                  "com.phoenix.read",
-		"app_version":              "7.3.9.32",
-		"version_code":             73932,
-		"sdk_version":              "3.7.0-rc.34-fanqie-xiaoshuo",
-		"sdk_target_version":       29,
-		"git_hash":                 "3a88f4e",
-		"os":                       "Android",
-		"os_version":               "16",
-		"os_api":                   36,
-		"device_model":             "25053RT47C",
-		"device_brand":             "Redmi",
-		"device_manufacturer":      "Xiaomi",
-		"cpu_abi":                  "arm64-v8a",
-		"release_build":            "b5e187f",
-		"density_dpi":              520,
-		"display_density":          "mdpi",
-		"resolution":               "1280x2772",
-		"language":                 "zh",
-		"timezone":                 8,
-		"access":                   "wifi",
-		"not_request_sender":       0,
-		"carrier":                  "CHINA MOBILE",
-		"mcc_mnc":                  "46000",
-		"rom":                      "eng.root.20231116.160340",
-		"rom_version":              "W528JS release-keys",
-		"cdid":                     newHongguoUUID(),
-		"sig_hash":                 "56a962410c494bbaf0b58dba20cae56f",
-		"openudid":                 newHongguoShortID(16),
-		"clientudid":               newHongguoUUID(),
-		"ipv6_list":                []any{},
-		"region":                   "CN",
-		"tz_name":                  "Asia/Shanghai",
-		"tz_offset":                28800,
-		"sim_region":               "cn",
-		"sim_serial_number":        []any{},
-		"oaid_may_support":         false,
-		"req_id":                   newHongguoUUID(),
-		"device_platform":          "android",
-		"custom":                   map[string]any{"account_region_src": "fallback", "host_bit": 64, "account_region": "cn", "dragon_device_type": "pad"},
-		"pre_installed_channel":    "",
-		"apk_first_install_time":   millis,
-		"is_system_app":            0,
-		"sdk_flavor":               "china",
-		"guest_mode":               0,
+		"display_name":           "红果免费短剧",
+		"update_version_code":    73932,
+		"manifest_version_code":  73932,
+		"app_version_minor":      "7.3.9.32",
+		"aid":                    8662,
+		"channel":                "69310258a",
+		"package":                "com.phoenix.read",
+		"app_version":            "7.3.9.32",
+		"version_code":           73932,
+		"sdk_version":            "3.7.0-rc.34-fanqie-xiaoshuo",
+		"sdk_target_version":     29,
+		"git_hash":               "3a88f4e",
+		"os":                     "Android",
+		"os_version":             "16",
+		"os_api":                 36,
+		"device_model":           "25053RT47C",
+		"device_brand":           "Redmi",
+		"device_manufacturer":    "Xiaomi",
+		"cpu_abi":                "arm64-v8a",
+		"release_build":          "b5e187f",
+		"density_dpi":            520,
+		"display_density":        "mdpi",
+		"resolution":             "1280x2772",
+		"language":               "zh",
+		"timezone":               8,
+		"access":                 "wifi",
+		"not_request_sender":     0,
+		"carrier":                "CHINA MOBILE",
+		"mcc_mnc":                "46000",
+		"rom":                    "eng.root.20231116.160340",
+		"rom_version":            "W528JS release-keys",
+		"cdid":                   newHongguoUUID(),
+		"sig_hash":               "56a962410c494bbaf0b58dba20cae56f",
+		"openudid":               newHongguoShortID(16),
+		"clientudid":             newHongguoUUID(),
+		"ipv6_list":              []any{},
+		"region":                 "CN",
+		"tz_name":                "Asia/Shanghai",
+		"tz_offset":              28800,
+		"sim_region":             "cn",
+		"sim_serial_number":      []any{},
+		"oaid_may_support":       false,
+		"req_id":                 newHongguoUUID(),
+		"device_platform":        "android",
+		"custom":                 map[string]any{"account_region_src": "fallback", "host_bit": 64, "account_region": "cn", "dragon_device_type": "pad"},
+		"pre_installed_channel":  "",
+		"apk_first_install_time": millis,
+		"is_system_app":          0,
+		"sdk_flavor":             "china",
+		"guest_mode":             0,
 	}
 	document := map[string]any{"magic_tag": "ss_app_log", "header": header, "_gen_time": millis}
 	raw, err := json.Marshal(document)
@@ -212,6 +212,62 @@ func (downloader *Downloader) ensureHongguoDevice(ctx context.Context) error {
 	}
 	client.mu.Unlock()
 	return err
+}
+
+func (downloader *Downloader) hongguoPlaybackProfile(ctx context.Context) hongguoPlaybackIdentity {
+	client := downloader.hongguoClient()
+	client.mu.Lock()
+	current := client.playback
+	client.mu.Unlock()
+	if current.Ready && hongguoNumericID.MatchString(current.DeviceID) && hongguoNumericID.MatchString(current.InstallID) {
+		return current
+	}
+	registration, err := downloader.registerHongguoDevice(ctx)
+	if err != nil {
+		return current
+	}
+	cdid := current.Cdid
+	if cdid == "" {
+		cdid = newHongguoUUID()
+	}
+	next := hongguoPlaybackIdentity{
+		DeviceID:  registration.DeviceID,
+		InstallID: registration.InstallID,
+		Cdid:      cdid,
+		Cookies:   registration.Cookies,
+		Ready:     true,
+	}
+	client.mu.Lock()
+	client.playback = next
+	client.mu.Unlock()
+	return next
+}
+
+func (downloader *Downloader) rotateHongguoIdentity(ctx context.Context, playback bool) bool {
+	client := downloader.hongguoClient()
+	now := time.Now()
+	client.mu.Lock()
+	if !client.rotateAt.IsZero() && now.Sub(client.rotateAt) < hongguoDeviceRotateInterval {
+		client.mu.Unlock()
+		return false
+	}
+	client.rotateAt = now
+	if playback {
+		client.playback = hongguoPlaybackIdentity{}
+	} else {
+		client.state.Registered = false
+		client.state.DeviceID = ""
+		client.state.InstallID = ""
+		client.state.Cookies = nil
+		client.state.Feeds = map[string]hongguoCatalogCursor{}
+		client.registerErr = nil
+		client.registerAt = time.Time{}
+	}
+	client.mu.Unlock()
+	if playback {
+		return downloader.hongguoPlaybackProfile(ctx).Ready
+	}
+	return downloader.ensureHongguoDevice(ctx) == nil
 }
 
 func (downloader *Downloader) registerHongguoDevice(ctx context.Context) (hongguoRegistration, error) {

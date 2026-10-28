@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const hongguoPlaybackBlankRetries = 3
+const hongguoPlaybackBlankRetries = 1
 
 // hongguoPlaybackBizParam 与参考实现 hgtv-tv 的取流 biz_param 对齐。
 func hongguoPlaybackBizParam() map[string]any {
@@ -135,7 +135,10 @@ func hongguoVideoModelValue(value any) map[string]any {
 // isHongguoBlankResponseError 判断是否为「网关挡请求返回空体」类错误，
 // 这类错误需要原地重试，而不是立即换下一条候选路径。
 func isHongguoBlankResponseError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "未返回有效数据")
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, errHongguoBlankResponse) || strings.Contains(err.Error(), "未返回有效数据")
 }
 
 func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
