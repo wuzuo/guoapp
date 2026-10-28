@@ -420,6 +420,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
                               ? (position / duration).clamp(0, 1)
                               : 0,
                           minHeight: 4,
+                          color: Colors.white,
                           backgroundColor: Colors.transparent,
                         ),
                       ],

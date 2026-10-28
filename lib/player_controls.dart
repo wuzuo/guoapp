@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'player_interactions.dart';
+import 'remote_widgets.dart';
 import 'widgets.dart';
 import 'lan_screen.dart';
 import 'playback_player.dart';
@@ -287,10 +288,10 @@ class _PlayerControlsState extends State<PlayerControls> {
                                 ],
                               ),
                             ),
-                            if (!state.buffering &&
+                            if (!widget.fullscreen &&
+                                !state.buffering &&
                                 widget.enabled &&
-                                constraints.maxHeight >=
-                                    (widget.fullscreen ? 420 : 300))
+                                constraints.maxHeight >= 300)
                               Center(
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -330,6 +331,66 @@ class _PlayerControlsState extends State<PlayerControls> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  if (widget.fullscreen &&
+                                      constraints.maxHeight >= 240)
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: [
+                                          RemoteButton(
+                                            key: const ValueKey(
+                                              'player-previous',
+                                            ),
+                                            label: '上一集',
+                                            icon: Icons.skip_previous_rounded,
+                                            onPressed: widget.onPrevious,
+                                          ),
+                                          RemoteButton(
+                                            key: const ValueKey(
+                                              'player-play-pause',
+                                            ),
+                                            label: state.playing ? '暂停' : '播放',
+                                            icon: state.playing
+                                                ? Icons.pause_rounded
+                                                : Icons.play_arrow_rounded,
+                                            onPressed: widget.enabled
+                                                ? widget.onTogglePlayback
+                                                : null,
+                                          ),
+                                          RemoteButton(
+                                            key: const ValueKey('player-next'),
+                                            label: '下一集',
+                                            icon: Icons.skip_next_rounded,
+                                            onPressed: widget.onNext,
+                                          ),
+                                          RemoteButton(
+                                            key: const ValueKey(
+                                              'player-episodes',
+                                            ),
+                                            label: '选集',
+                                            icon: Icons.grid_view_rounded,
+                                            onPressed: () =>
+                                                _panel(widget.onEpisodes),
+                                          ),
+                                          RemoteButton(
+                                            key: const ValueKey('player-speed'),
+                                            label: '${widget.speed}x',
+                                            icon: Icons.speed_rounded,
+                                            onPressed: () =>
+                                                _panel(widget.onSpeed),
+                                          ),
+                                          RemoteButton(
+                                            key: const ValueKey(
+                                              'player-quality',
+                                            ),
+                                            label: widget.qualityLabel,
+                                            icon: Icons.hd_rounded,
+                                            onPressed: () =>
+                                                _panel(widget.onQuality),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   Row(
                                     children: [
                                       if (constraints.maxHeight <
@@ -380,89 +441,30 @@ class _PlayerControlsState extends State<PlayerControls> {
                                       ),
                                     ],
                                   ),
-                                  if (widget.fullscreen &&
-                                      constraints.maxHeight >= 240)
-                                    SingleChildScrollView(
-                                      scrollDirection: Axis.horizontal,
-                                      child: Row(
-                                        children: [
-                                          TextButton(
-                                            key: const ValueKey('player-speed'),
-                                            onPressed: () =>
-                                                _panel(widget.onSpeed),
-                                            child: Text('${widget.speed}x'),
-                                          ),
-                                          TextButton(
-                                            key: const ValueKey(
-                                              'player-quality',
-                                            ),
-                                            onPressed: () =>
-                                                _panel(widget.onQuality),
-                                            child: Text(widget.qualityLabel),
-                                          ),
-                                          TextButton.icon(
-                                            key: const ValueKey(
-                                              'player-episodes',
-                                            ),
-                                            onPressed: () =>
-                                                _panel(widget.onEpisodes),
-                                            icon: const Icon(
-                                              Icons.grid_view_rounded,
-                                              size: 18,
-                                            ),
-                                            label: const Text('选集'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
                                   if (widget.showProgress)
-                                    SliderTheme(
-                                      data: SliderTheme.of(
-                                        context,
-                                      ).copyWith(trackHeight: 2),
-                                      child: Slider(
-                                        key: const ValueKey('player-progress'),
-                                        value: (_seekValue ?? position).clamp(
-                                          0,
-                                          duration > 0 ? duration : 1,
-                                        ),
-                                        max: duration > 0 ? duration : 1,
-                                        secondaryTrackValue: buffered.clamp(
-                                          0,
-                                          duration > 0 ? duration : 1,
-                                        ),
-                                        semanticFormatterCallback:
-                                            formatPosition,
-                                        onChangeStart:
-                                            widget.enabled && duration > 0
-                                            ? (_) {
-                                                widget.interactions.cancel();
-                                                _hideTimer?.cancel();
-                                              }
-                                            : null,
-                                        onChanged:
-                                            !widget.enabled || duration <= 0
-                                            ? null
-                                            : (value) {
-                                                _hideTimer?.cancel();
-                                                setState(
-                                                  () => _seekValue = value,
-                                                );
-                                              },
-                                        onChangeEnd: (value) {
-                                          if (widget.enabled && duration > 0) {
-                                            (widget.onSeek ??
-                                                widget.player.seek)(
-                                              Duration(
-                                                milliseconds: (value * 1000)
-                                                    .round(),
-                                              ),
-                                            );
-                                          }
-                                          setState(() => _seekValue = null);
-                                          _show(user: true);
-                                        },
-                                      ),
+                                    _ProgressTrack(
+                                      key: const ValueKey('player-progress'),
+                                      position: _seekValue ?? position,
+                                      buffered: buffered,
+                                      duration: duration,
+                                      enabled: widget.enabled,
+                                      onScrub: (value) {
+                                        widget.interactions.cancel();
+                                        _hideTimer?.cancel();
+                                        setState(() => _seekValue = value);
+                                      },
+                                      onCommit: (value) {
+                                        if (duration > 0) {
+                                          (widget.onSeek ?? widget.player.seek)(
+                                            Duration(
+                                              milliseconds: (value * 1000)
+                                                  .round(),
+                                            ),
+                                          );
+                                        }
+                                        setState(() => _seekValue = null);
+                                        _show(user: true);
+                                      },
                                     ),
                                 ],
                               ),
@@ -504,4 +506,92 @@ class _PlayerControlsState extends State<PlayerControls> {
       ),
     );
   }
+}
+
+class _ProgressTrack extends StatefulWidget {
+  const _ProgressTrack({
+    super.key,
+    required this.position,
+    required this.buffered,
+    required this.duration,
+    required this.enabled,
+    required this.onScrub,
+    required this.onCommit,
+  });
+
+  final double position;
+  final double buffered;
+  final double duration;
+  final bool enabled;
+  final ValueChanged<double> onScrub;
+  final ValueChanged<double> onCommit;
+
+  @override
+  State<_ProgressTrack> createState() => _ProgressTrackState();
+}
+
+class _ProgressTrackState extends State<_ProgressTrack> {
+  double? _drag;
+  double _last = 0;
+
+  double get _limit => widget.duration > 0 ? widget.duration : 1;
+
+  void _update(Offset local, double width) {
+    if (!widget.enabled || widget.duration <= 0 || width <= 0) return;
+    final value = (local.dx / width).clamp(0.0, 1.0) * _limit;
+    _last = value;
+    setState(() => _drag = value);
+    widget.onScrub(value);
+  }
+
+  void _commit() {
+    if (_drag != null) widget.onCommit(_last);
+    if (mounted) setState(() => _drag = null);
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final value = (_drag ?? widget.position).clamp(0.0, _limit) / _limit;
+      final buffered = widget.buffered.clamp(0.0, _limit) / _limit;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) => _update(details.localPosition, width),
+        onTapUp: (_) => _commit(),
+        onTapCancel: _commit,
+        onHorizontalDragStart: (details) =>
+            _update(details.localPosition, width),
+        onHorizontalDragUpdate: (details) =>
+            _update(details.localPosition, width),
+        onHorizontalDragEnd: (_) => _commit(),
+        onHorizontalDragCancel: _commit,
+        child: SizedBox(
+          height: 18,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: 3,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const ColoredBox(color: Colors.white24),
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: buffered,
+                    child: const ColoredBox(color: Colors.white38),
+                  ),
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: value,
+                    child: const ColoredBox(color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
