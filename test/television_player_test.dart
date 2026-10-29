@@ -109,15 +109,16 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowLeft);
       await press(tester, LogicalKeyboardKey.arrowLeft);
       expect(player.state.position, Duration.zero);
-      await press(tester, LogicalKeyboardKey.arrowUp);
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'tv-player-play');
-      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await press(tester, LogicalKeyboardKey.arrowDown);
       expect(
         FocusManager.instance.primaryFocus?.debugLabel,
         'tv-player-progress',
       );
       await press(tester, LogicalKeyboardKey.arrowRight);
       expect(player.state.position, const Duration(seconds: 10));
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'tv-player-play');
       await leave(tester, repository, player);
       expect(store.watched(FixtureRepository.free.id)?.position, 10);
     },
@@ -148,7 +149,17 @@ void main() {
         'tv-player-episodes',
       );
       expect(repository.active.length, 1);
-      await press(tester, LogicalKeyboardKey.arrowRight);
+      for (var step = 0; step < 6; step++) {
+        if (FocusManager.instance.primaryFocus?.debugLabel ==
+            'tv-player-settings') {
+          break;
+        }
+        await press(tester, LogicalKeyboardKey.arrowRight);
+      }
+      expect(
+        FocusManager.instance.primaryFocus?.debugLabel,
+        'tv-player-settings',
+      );
       await press(tester, LogicalKeyboardKey.select);
       expect(find.text('倍速'), findsOneWidget);
       await press(tester, LogicalKeyboardKey.arrowRight);

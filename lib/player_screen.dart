@@ -1161,6 +1161,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             onRetryDanmaku: _danmaku.canRetry ? _danmaku.retry : null,
             preload: _preloadEnabled,
             preloadStatus: _preloader.status,
+            frameMode: _frameMode,
+            hardwareDecoding: _hardwareDecoding,
+            actualQuality: _plan?.quality ?? 0,
+            engineInfo: _engineInfo,
           ),
         ),
       );
@@ -1176,6 +1180,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           autoAdvance: selection.autoAdvance,
           danmaku: selection.danmaku,
           preload: selection.preload,
+          frameMode: selection.frameMode,
+          hardwareDecoding: selection.hardwareDecoding,
         ),
       );
     } catch (_) {

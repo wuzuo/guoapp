@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,7 +45,9 @@ class TelevisionControls extends StatefulWidget {
 
 class _TelevisionControlsState extends State<TelevisionControls> {
   final _surface = FocusNode(debugLabel: 'tv-player-surface');
+  final _previous = FocusNode(debugLabel: 'tv-player-previous');
   final _play = FocusNode(debugLabel: 'tv-player-play');
+  final _next = FocusNode(debugLabel: 'tv-player-next');
   final _episodes = FocusNode(debugLabel: 'tv-player-episodes');
   final _settings = FocusNode(debugLabel: 'tv-player-settings');
   final _push = FocusNode(debugLabel: 'tv-player-push');
@@ -54,6 +57,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
   Timer? _seekTimer;
   bool _visible = true;
   bool _panelOpen = false;
+  FocusNode? _lastRow;
   bool _seekHint = false;
 
   @override
@@ -90,7 +94,11 @@ class _TelevisionControlsState extends State<TelevisionControls> {
   void didUpdateWidget(covariant TelevisionControls oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.enabled && !oldWidget.enabled) {
-      if (!widget.seamless) _show();
+      if (!widget.seamless) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && widget.enabled) _show();
+        });
+      }
     } else if (!widget.enabled) {
       _hideTimer?.cancel();
     }
@@ -102,22 +110,38 @@ class _TelevisionControlsState extends State<TelevisionControls> {
   }
 
   void _focus(FocusNode node) {
+    bool ready() =>
+        mounted &&
+        widget.enabled &&
+        !_panelOpen &&
+        node.context != null &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+    if (ready()) {
+      node.requestFocus();
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted &&
-          widget.enabled &&
-          !_panelOpen &&
-          node.context != null &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        node.requestFocus();
-      }
+      if (ready()) node.requestFocus();
     });
   }
+
+  List<FocusNode> get _rowNodes => [
+    _previous,
+    _play,
+    _next,
+    _episodes,
+    if (widget.onPush != null) _push,
+    _settings,
+  ].where((node) => node.canRequestFocus).toList();
 
   void _show() {
     final needsFocus =
         !_visible || !_surface.hasFocus || _surface.hasPrimaryFocus;
     if (!_visible) setState(() => _visible = true);
-    if (needsFocus) _focus(_play);
+    if (needsFocus) {
+      _lastRow = _play;
+      _focus(_play);
+    }
     _scheduleHide();
   }
 
@@ -194,14 +218,23 @@ class _TelevisionControlsState extends State<TelevisionControls> {
       if (event is KeyDownEvent) widget.onNext?.call();
     } else if (key == LogicalKeyboardKey.mediaTrackPrevious) {
       if (event is KeyDownEvent) widget.onPrevious?.call();
+    } else if (_visible && _rowNodes.any((node) => node.hasFocus)) {
+      final row = _rowNodes;
+      final index = row.indexWhere((node) => node.hasFocus);
+      _lastRow = row[index];
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _focus(row[min(index + 1, row.length - 1)]);
+      } else if (key == LogicalKeyboardKey.arrowLeft) {
+        _focus(row[max(index - 1, 0)]);
+      } else if (key == LogicalKeyboardKey.arrowDown) {
+        _focus(_progress);
+      } else {
+        return KeyEventResult.ignored;
+      }
     } else if (_visible &&
-        key == LogicalKeyboardKey.arrowDown &&
-        !_progress.hasFocus) {
-      _focus(_progress);
-    } else if (_visible &&
-        key == LogicalKeyboardKey.arrowUp &&
-        _progress.hasFocus) {
-      _focus(_play);
+        _progress.hasFocus &&
+        key == LogicalKeyboardKey.arrowUp) {
+      _focus(_lastRow ?? _play);
     } else if ((!_visible || _progress.hasFocus) &&
         key == LogicalKeyboardKey.arrowLeft) {
       _seek(-10);
@@ -233,7 +266,9 @@ class _TelevisionControlsState extends State<TelevisionControls> {
     }
     for (final node in [
       _surface,
+      _previous,
       _play,
+      _next,
       _episodes,
       _settings,
       _progress,
@@ -335,6 +370,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
                                 key: const ValueKey('tv-previous'),
                                 label: '上一集',
                                 icon: Icons.skip_previous_rounded,
+                                focusNode: _previous,
                                 onPressed: widget.onPrevious,
                               ),
                               RemoteButton(
@@ -353,6 +389,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
                                 key: const ValueKey('tv-next'),
                                 label: '下一集',
                                 icon: Icons.skip_next_rounded,
+                                focusNode: _next,
                                 onPressed: widget.onNext,
                               ),
                               RemoteButton(
@@ -487,12 +524,16 @@ class TelevisionPlaybackSetting {
     this.autoAdvance,
     this.danmaku,
     this.preload,
+    this.frameMode,
+    this.hardwareDecoding,
   });
   final double? speed;
   final int? quality;
   final bool? autoAdvance;
   final bool? danmaku;
   final bool? preload;
+  final VideoFrameMode? frameMode;
+  final bool? hardwareDecoding;
 }
 
 class TelevisionSettingsDialog extends StatelessWidget {
@@ -510,6 +551,10 @@ class TelevisionSettingsDialog extends StatelessWidget {
     this.onRetryDanmaku,
     this.preload = true,
     this.preloadStatus = '',
+    this.frameMode = VideoFrameMode.contain,
+    this.hardwareDecoding = true,
+    this.actualQuality = 0,
+    this.engineInfo = '',
   });
   final double speed;
   final int quality;
@@ -523,6 +568,23 @@ class TelevisionSettingsDialog extends StatelessWidget {
   final VoidCallback? onRetryDanmaku;
   final bool preload;
   final String preloadStatus;
+  final VideoFrameMode frameMode;
+  final bool hardwareDecoding;
+  final int actualQuality;
+  final String engineInfo;
+
+  List<int> get _qualityOptions {
+    final options = <int>{0, 1080, 720, 540, 480};
+    options.addAll(qualities.where((value) => value > 0));
+    final sorted = options.toList()
+      ..sort((left, right) {
+        if (left == right) return 0;
+        if (left == 0) return -1;
+        if (right == 0) return 1;
+        return right.compareTo(left);
+      });
+    return sorted;
+  }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -556,14 +618,19 @@ class TelevisionSettingsDialog extends StatelessWidget {
             const SizedBox(height: 20),
             const Text('清晰度', style: TextStyle(fontSize: 18)),
             const SizedBox(height: 8),
+            if (actualQuality > 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '当前播放 ${actualQuality}P',
+                  style: const TextStyle(fontSize: 14, color: Colors.white70),
+                ),
+              ),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final value in [
-                  0,
-                  ...qualities.where((value) => value > 0).toSet(),
-                ])
+                for (final value in _qualityOptions)
                   RemoteButton(
                     key: ValueKey('tv-quality-$value'),
                     label: value == 0 ? '自动（优先高清）' : '${value}P',
@@ -575,6 +642,46 @@ class TelevisionSettingsDialog extends StatelessWidget {
                   ),
               ],
             ),
+            const SizedBox(height: 20),
+            const Text('画面模式', style: TextStyle(fontSize: 18)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final mode in VideoFrameMode.values)
+                  RemoteButton(
+                    key: ValueKey('tv-frame-${mode.name}'),
+                    label: mode.label,
+                    selected: mode == frameMode,
+                    onPressed: () => Navigator.pop(
+                      context,
+                      TelevisionPlaybackSetting(frameMode: mode),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            RemoteButton(
+              key: const ValueKey('tv-hardware-decoding'),
+              label: hardwareDecoding ? '硬件解码：开' : '硬件解码：关',
+              onPressed: () => Navigator.pop(
+                context,
+                TelevisionPlaybackSetting(hardwareDecoding: !hardwareDecoding),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '关闭后改用软件解码，适合花屏、绿屏或音画不同步',
+              style: const TextStyle(fontSize: 13, color: Colors.white70),
+            ),
+            if (engineInfo.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                engineInfo,
+                style: const TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+            ],
             const SizedBox(height: 20),
             if (showDanmaku) ...[
               RemoteButton(
