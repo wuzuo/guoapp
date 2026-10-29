@@ -180,6 +180,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         : createPlaybackPlayer(
             television: AppLayout.isTelevisionNow(context),
             systemPlayer: widget.store.tvSystemPlayer,
+            platformView: widget.store.tvPlatformView,
           );
     _interactions = PlayerInteractions(
       player: _player,

@@ -8,7 +8,7 @@ import 'playback_player.dart';
 /// Android 端使用 Media3 ExoPlayer 解码，帧通过 SurfaceProducer 纹理交给 Flutter 合成，
 /// 因此弹幕与控制层仍是 Flutter 控件，画在纹理之上。
 class ExoPlaybackPlayer implements PlaybackPlayer {
-  ExoPlaybackPlayer() {
+  ExoPlaybackPlayer({this.platformView = false}) {
     _installHandler();
     _stream = PlaybackStream(
       position: _position.stream,
@@ -53,6 +53,9 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
   final _error = StreamController<String>.broadcast();
   final _video = StreamController<PlaybackVideoSize>.broadcast();
   final _texture = ValueNotifier<int>(0);
+  final _session = ValueNotifier<int>(0);
+
+  final bool platformView;
 
   late final PlaybackStream _stream;
   PlaybackState _state = const PlaybackState();
@@ -83,6 +86,7 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
       _id = id;
       _players[id] = this;
       _texture.value = texture;
+      _session.value = id;
     } catch (_) {
       _error.add('原生播放器初始化失败');
     }
@@ -242,34 +246,61 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
   @override
   Future<void> configureMpv(Map<String, String> options) async {}
 
+  static int _fitMode(BoxFit fit) => switch (fit) {
+    BoxFit.cover => 1,
+    BoxFit.fill => 2,
+    _ => 0,
+  };
+
   @override
-  Widget buildVideo({required Widget overlay, required BoxFit fit}) =>
-      ValueListenableBuilder<int>(
-        valueListenable: _texture,
-        builder: (context, texture, _) {
-          final size = _state.video;
-          final width = (size?.width ?? 16).toDouble();
-          final height = (size?.height ?? 9).toDouble();
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              if (texture > 0)
-                FittedBox(
-                  fit: fit,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: Texture(textureId: texture),
-                  ),
-                )
-              else
-                const ColoredBox(color: Colors.black),
-              overlay,
-            ],
-          );
-        },
+  Widget buildVideo({required Widget overlay, required BoxFit fit}) {
+    if (platformView) {
+      return ValueListenableBuilder<int>(
+        valueListenable: _session,
+        builder: (context, id, _) => Stack(
+          fit: StackFit.expand,
+          children: [
+            if (id > 0)
+              AndroidView(
+                key: ValueKey('exo-view-$id-${fit.name}'),
+                viewType: 'duanju/playback-view',
+                creationParams: {'id': id, 'fit': _fitMode(fit)},
+                creationParamsCodec: const StandardMessageCodec(),
+              )
+            else
+              const ColoredBox(color: Colors.black),
+            overlay,
+          ],
+        ),
       );
+    }
+    return ValueListenableBuilder<int>(
+      valueListenable: _texture,
+      builder: (context, texture, _) {
+        final size = _state.video;
+        final width = (size?.width ?? 16).toDouble();
+        final height = (size?.height ?? 9).toDouble();
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (texture > 0)
+              FittedBox(
+                fit: fit,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: width,
+                  height: height,
+                  child: Texture(textureId: texture),
+                ),
+              )
+            else
+              const ColoredBox(color: Colors.black),
+            overlay,
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Future<void> dispose() async {
@@ -293,6 +324,7 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
       unawaited(controller.close());
     }
     _texture.dispose();
+    _session.dispose();
     if (id > 0) {
       try {
         await _channel.invokeMethod<void>('dispose', {'id': id});

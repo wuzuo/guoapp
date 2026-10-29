@@ -8,11 +8,12 @@ import 'playback_player.dart';
 PlaybackPlayer createPlaybackPlayer({
   required bool television,
   bool systemPlayer = true,
+  bool platformView = true,
 }) {
   if (defaultTargetPlatform == TargetPlatform.android &&
       television &&
       systemPlayer) {
-    return ExoPlaybackPlayer();
+    return ExoPlaybackPlayer(platformView: platformView);
   }
   return MediaKitPlaybackPlayer(
     Player(

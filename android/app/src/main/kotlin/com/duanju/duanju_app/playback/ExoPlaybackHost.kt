@@ -1,9 +1,11 @@
 package com.duanju.duanju_app.playback
 
 import android.content.Context
+import android.graphics.Color
 import android.net.Uri
 import android.util.Log
 import android.view.Surface
+import android.view.View
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
@@ -23,9 +25,14 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.StandardMessageCodec
+import io.flutter.plugin.platform.PlatformView
+import io.flutter.plugin.platform.PlatformViewFactory
 import io.flutter.view.TextureRegistry
 import java.util.concurrent.Executors
 
@@ -46,6 +53,36 @@ class ExoPlaybackHost(
 
     init {
         channel.setMethodCallHandler(this)
+        engine.platformViewsController.registry.registerViewFactory(
+            "duanju/playback-view",
+            PlaybackViewFactory(this),
+        )
+    }
+
+    fun platformView(context: Context, id: Int, fit: Int): PlatformView {
+        val session = sessions[id]
+        val view = PlayerView(context).apply {
+            useController = false
+            isFocusable = false
+            isClickable = false
+            setShutterBackgroundColor(Color.BLACK)
+            setKeepContentOnPlayerReset(true)
+            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+            resizeMode = when (fit) {
+                1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+            player = session?.player
+        }
+        session?.attachPlatformView(view)
+        return object : PlatformView {
+            override fun getView(): View = view
+
+            override fun dispose() {
+                session?.detachPlatformView(view)
+            }
+        }
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -103,13 +140,13 @@ class ExoPlaybackHost(
         )
             .setLoadControl(
                 DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(30000, 120000, 1000, 2000)
-                    .setTargetBufferBytes(64 * 1024 * 1024)
-                    .setPrioritizeTimeOverSizeThresholds(false)
+                    .setBufferDurationsMs(15000, 30000, 1000, 2000)
+                    .setTargetBufferBytes(12 * 1024 * 1024)
                     .build(),
             )
             .build()
 
+        private var platformView: PlayerView? = null
         private var ticker: Runnable? = null
         private var attached: Surface? = null
         private var dropped = 0
@@ -228,7 +265,7 @@ class ExoPlaybackHost(
         }
 
         private fun attachSurface() {
-            if (released) return
+            if (released || platformView != null) return
             try {
                 val surface = producer.getForcedNewSurface()
                 player.setVideoSurface(surface)
@@ -242,7 +279,7 @@ class ExoPlaybackHost(
         private fun detachSurface() {
             if (released) return
             try {
-                player.setVideoSurface(null)
+                if (platformView == null) player.setVideoSurface(null)
             } catch (_: Throwable) {
             }
             try {
@@ -253,7 +290,7 @@ class ExoPlaybackHost(
         }
 
         private fun resizeSurface(width: Int, height: Int) {
-            if (released) return
+            if (released || platformView != null) return
             val target = surfaceSize(width, height)
             if (producer.width == target.first && producer.height == target.second) return
             detachSurface()
@@ -393,9 +430,23 @@ class ExoPlaybackHost(
             }
         }
 
+        fun attachPlatformView(view: PlayerView) {
+            platformView = view
+        }
+
+        fun detachPlatformView(view: PlayerView) {
+            if (platformView === view) platformView = null
+            if (view.player === player) view.player = null
+        }
+
         fun release() {
             if (released) return
             released = true
+            try {
+                platformView?.let { view -> if (view.player === player) view.player = null }
+            } catch (_: Throwable) {
+            }
+            platformView = null
             ticker?.let { main.removeCallbacks(it) }
             ticker = null
             try {
@@ -412,5 +463,15 @@ class ExoPlaybackHost(
             } catch (_: Throwable) {
             }
         }
+    }
+}
+
+private class PlaybackViewFactory(private val host: ExoPlaybackHost) :
+    PlatformViewFactory(StandardMessageCodec.INSTANCE) {
+    override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
+        val params = args as? Map<*, *>
+        val id = (params?.get("id") as? Number)?.toInt() ?: 0
+        val fit = (params?.get("fit") as? Number)?.toInt() ?: 0
+        return host.platformView(context, id, fit)
     }
 }

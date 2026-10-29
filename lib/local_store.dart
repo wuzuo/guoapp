@@ -247,6 +247,13 @@ class LocalStore extends ChangeNotifier {
   Future<void> setTvSystemPlayer(bool value) =>
       _setting(_key('tvSystemPlayer'), value);
 
+  bool get tvPlatformView => _configurationError == null
+      ? _bool(_key('tvPlatformView')) ?? true
+      : true;
+
+  Future<void> setTvPlatformView(bool value) =>
+      _setting(_key('tvPlatformView'), value);
+
   CatalogView get catalogView {
     if (locked) return const CatalogView();
     try {
