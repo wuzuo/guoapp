@@ -15,6 +15,8 @@ import 'app_build.dart';
 import 'sources_screen.dart';
 import 'widgets.dart';
 import 'resource_settings_screen.dart';
+import 'app_layout.dart';
+import 'update_dialog.dart';
 import 'lan_screen.dart';
 import 'webdav_screen.dart';
 
@@ -213,6 +215,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: Text(AppTheme.label(widget.store.themeMode)),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: _chooseTheme,
+              ),
+              ListTile(
+                key: const ValueKey('check-update'),
+                leading: const Icon(Icons.system_update_alt_rounded),
+                title: const Text('检查更新'),
+                subtitle: Text('当前版本 ${AppLayout.versionOf(context)}'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => showAppUpdateDialog(context),
               ),
               ListTile(
                 leading: const Icon(Icons.people_outline),

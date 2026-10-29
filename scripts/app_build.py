@@ -1,5 +1,15 @@
 import base64
+import re
 from dataclasses import dataclass
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+
+
+def pubspec_version():
+    text = (_ROOT / 'pubspec.yaml').read_text(encoding='utf-8')
+    match = re.search(r'^version:\s*([\w.+-]+)\s*$', text, re.MULTILINE)
+    return match.group(1) if match else ''
 
 
 @dataclass(frozen=True)
@@ -20,7 +30,8 @@ class BuildVariant:
 
     @property
     def flutter_arguments(self):
-        return ['--dart-define=ALL_SOURCES=' + str(self.all_sources).lower()]
+        return ['--dart-define=ALL_SOURCES=' + str(self.all_sources).lower(),
+                '--dart-define=APP_VERSION=' + pubspec_version()]
 
     @property
     def linker_flags(self):

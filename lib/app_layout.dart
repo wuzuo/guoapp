@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 
 export 'app_build.dart';
 
-const appVersion = '0.2.16';
+const _appVersionDefine = String.fromEnvironment('APP_VERSION');
+
+const appVersion = _appVersionDefine == '' ? '0.2.16' : _appVersionDefine;
 
 ThemeData televisionTheme(ThemeData theme) {
   final colors = theme.colorScheme;
@@ -42,9 +44,14 @@ ThemeData televisionTheme(ThemeData theme) {
 }
 
 class AppDevice {
-  const AppDevice({this.television = false, this.version = appVersion});
+  const AppDevice({
+    this.television = false,
+    this.version = appVersion,
+    this.abi = '',
+  });
   final bool television;
   final String version;
+  final String abi;
   static const channel = MethodChannel('duanju/device');
 
   static Future<AppDevice> detect() async {
@@ -56,6 +63,7 @@ class AppDevice {
       return AppDevice(
         television: data?['television'] == true,
         version: data?['version'] as String? ?? appVersion,
+        abi: data?['abi'] as String? ?? '',
       );
     } on PlatformException {
       return const AppDevice();
