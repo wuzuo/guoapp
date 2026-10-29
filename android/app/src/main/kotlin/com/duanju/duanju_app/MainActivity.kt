@@ -74,11 +74,19 @@ class MainActivity : FlutterActivity() {
                     val mode = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
                     val television = mode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
                         packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-                    val version = packageManager.getPackageInfo(packageName, 0).versionName
+                    val info = packageManager.getPackageInfo(packageName, 0)
+                    val version = info.versionName
+                    val build = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        info.longVersionCode
+                    } else {
+                        @Suppress("DEPRECATION")
+                        info.versionCode.toLong()
+                    }
                     result.success(
                         mapOf(
                             "television" to television,
                             "version" to version,
+                            "build" to build,
                             "abi" to Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
                         ),
                     )

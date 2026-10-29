@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'app_layout.dart';
 import 'app_update.dart';
 
 Future<void> showAppUpdateDialog(BuildContext context) =>
@@ -28,6 +29,15 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   }
 
   Future<void> _check() async {
+    if (!AppUpdateService.supported) {
+      setState(() {
+        _busy = false;
+        _status = Platform.isIOS
+            ? 'iOS 版本请通过 App Store 或自签工具更新'
+            : '当前平台不支持应用内更新';
+      });
+      return;
+    }
     try {
       final update = await AppUpdateService.check();
       if (!mounted) return;
@@ -111,7 +121,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             if (update != null) ...[
               const SizedBox(height: 12),
               Text(
-                '新版本 ${update.version}${update.sizeLabel.isEmpty ? '' : ' · ${update.sizeLabel}'}',
+                '新版本 ${update.version}${update.sizeLabel.isEmpty ? '' : ' · ${update.sizeLabel}'}（当前 ${AppLayout.versionOf(context)}）',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),

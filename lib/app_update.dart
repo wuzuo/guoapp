@@ -34,7 +34,10 @@ class AppUpdateService {
   static const _channel = MethodChannel('duanju/update');
   static const _userAgent = 'guoapp-updater';
 
+  static bool get supported => Platform.isAndroid || Platform.isWindows;
+
   static Future<AppUpdate?> check() async {
+    if (!supported) return null;
     final device = await AppDevice.detect();
     final local = _Version.parse(device.version);
     final abi = device.abi.isNotEmpty ? device.abi : 'arm64-v8a';
@@ -195,7 +198,6 @@ class _Version implements Comparable<_Version> {
   int compareTo(_Version other) {
     if (major != other.major) return major.compareTo(other.major);
     if (minor != other.minor) return minor.compareTo(other.minor);
-    if (patch != other.patch) return patch.compareTo(other.patch);
-    return build.compareTo(other.build);
+    return patch.compareTo(other.patch);
   }
 }

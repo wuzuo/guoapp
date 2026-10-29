@@ -47,10 +47,12 @@ class AppDevice {
   const AppDevice({
     this.television = false,
     this.version = appVersion,
+    this.build = 0,
     this.abi = '',
   });
   final bool television;
   final String version;
+  final int build;
   final String abi;
   static const channel = MethodChannel('duanju/device');
 
@@ -63,6 +65,7 @@ class AppDevice {
       return AppDevice(
         television: data?['television'] == true,
         version: data?['version'] as String? ?? appVersion,
+        build: (data?['build'] as num?)?.toInt() ?? 0,
         abi: data?['abi'] as String? ?? '',
       );
     } on PlatformException {
