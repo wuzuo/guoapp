@@ -51,6 +51,28 @@ object CodecCapabilities {
         return verdict
     }
 
+    fun softwareName(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.contains("google") ||
+            lower.contains("ffmpeg") ||
+            lower.contains("software") ||
+            lower.startsWith("c2.android")
+    }
+
+    fun hardwareReady(codec: String, width: Int, height: Int): Boolean {
+        val mime = mimeOf(codec) ?: return false
+        if (width <= 0 || height <= 0) return false
+        return runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+                !info.isEncoder &&
+                    !softwareName(info.name) &&
+                    runCatching {
+                        info.getCapabilitiesForType(mime).videoCapabilities.isSizeSupported(width, height)
+                    }.getOrDefault(false)
+            }
+        }.getOrDefault(false)
+    }
+
     fun learnFailure(codec: String, width: Int, height: Int) {
         val name = codec.trim().lowercase()
         if (name.isEmpty()) return

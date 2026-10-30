@@ -252,6 +252,10 @@ class ExoPlaybackHost(
                     send("rate", mapOf("rate" to playbackParameters.speed.toDouble()))
                 }
 
+                override fun onRenderedFirstFrame() {
+                    Log.i(TAG, "首帧渲染")
+                }
+
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
                     Log.i(TAG, "尺寸回调 ${videoSize.width}x${videoSize.height}")
                     if (videoSize.width <= 0 || videoSize.height <= 0) return
@@ -436,7 +440,20 @@ class ExoPlaybackHost(
             if (playable.size != sorted.size) {
                 Log.i(TAG, "跳过 ${sorted.size - playable.size} 个超出解码能力的档位")
             }
-            return playable
+            val top = playable.first()
+            if (CodecCapabilities.hardwareReady(top.codec, top.width, top.height)) {
+                return playable
+            }
+            val light = playable.filter { it.quality in 1..720 }
+            if (light.isEmpty()) {
+                Log.w(TAG, "${top.codec} 没有硬解器，可降档位为空，仍用 ${top.quality}P 软解")
+                return playable
+            }
+            Log.i(
+                TAG,
+                "${top.codec} 没有硬解器，直接选 ${light.first().quality}P 起播（跳过 ${top.quality}P）",
+            )
+            return light
         }
 
         private fun switchTo(
@@ -452,6 +469,7 @@ class ExoPlaybackHost(
             }
             sourceIndex = index
             worker.execute {
+                val started = System.currentTimeMillis()
                 val media = try {
                     buildSource(source.url, source.headers, source.key, localSource(source.url))
                 } catch (error: Throwable) {
@@ -461,6 +479,7 @@ class ExoPlaybackHost(
                     }
                     return@execute
                 }
+                Log.i(TAG, "构建媒体源 ${System.currentTimeMillis() - started}ms")
                 main.post {
                     if (released) {
                         result?.success(null)
@@ -515,13 +534,7 @@ class ExoPlaybackHost(
             }
         }
 
-        private fun isSoftwareDecoder(name: String): Boolean {
-            val lower = name.lowercase()
-            return lower.contains("google") ||
-                lower.contains("ffmpeg") ||
-                lower.contains("software") ||
-                lower.startsWith("c2.android")
-        }
+        private fun isSoftwareDecoder(name: String) = CodecCapabilities.softwareName(name)
 
         private fun softDowngradeIfNeeded(decoderName: String) {
             if (softChecked) return

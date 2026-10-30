@@ -773,6 +773,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     LanController.current?.detachPlayback(_lanIdentity);
     _lanIdentity = Object();
     _attachLanPlayback();
+    final watch = Stopwatch()..start();
     PlaybackPlan? prepared;
     PlaybackPlan? retained;
     bool installed = false;
@@ -809,6 +810,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (prepared == null) {
         return;
       }
+      print('[load] 解析 ${watch.elapsedMilliseconds}ms 预热=${warmed != null}');
       final plan = prepared;
       await _serialize(() async {
         if (_closed || ticket != _generation) {
@@ -846,6 +848,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           local: plan.local,
           sources: plan.sources,
         );
+        print('[load] 下发 ${watch.elapsedMilliseconds}ms');
         if (_closed || ticket != _generation) {
           return;
         }
@@ -853,6 +856,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _attachLanPlayback();
         _health.reset();
         await _interactions.applySpeed();
+        print('[load] 就绪 ${watch.elapsedMilliseconds}ms');
         if (mounted && !_closed && ticket == _generation) {
           setState(() {
             _loading = false;
