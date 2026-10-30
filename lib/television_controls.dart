@@ -56,6 +56,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
   Timer? _hideTimer;
   Timer? _seekTimer;
   bool _visible = true;
+  bool _userForced = false;
   bool _panelOpen = false;
   FocusNode? _lastRow;
   bool _seekHint = false;
@@ -102,6 +103,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
     } else if (!widget.enabled) {
       _hideTimer?.cancel();
     }
+    if (widget.seamless != oldWidget.seamless) _userForced = false;
     if (widget.seamless && !oldWidget.seamless) {
       _hideTimer?.cancel();
       if (_visible) setState(() => _visible = false);
@@ -134,9 +136,10 @@ class _TelevisionControlsState extends State<TelevisionControls> {
     _settings,
   ].where((node) => node.canRequestFocus).toList();
 
-  void _show() {
+  void _show({bool user = false}) {
     final needsFocus =
         !_visible || !_surface.hasFocus || _surface.hasPrimaryFocus;
+    if (user) _userForced = true;
     if (!_visible) setState(() => _visible = true);
     if (needsFocus) {
       _lastRow = _play;
@@ -250,7 +253,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
           LogicalKeyboardKey.numpadEnter,
           LogicalKeyboardKey.gameButtonA,
         ].contains(key)) {
-      _show();
+      _show(user: true);
     } else {
       return KeyEventResult.ignored;
     }
@@ -291,7 +294,7 @@ class _TelevisionControlsState extends State<TelevisionControls> {
         onKeyEvent: _key,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: widget.enabled ? _show : null,
+          onTap: widget.enabled ? () => _show(user: true) : null,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -313,7 +316,9 @@ class _TelevisionControlsState extends State<TelevisionControls> {
                     ),
                   ),
                 ),
-              if (_visible && widget.enabled) ...[
+              if (_visible &&
+                  widget.enabled &&
+                  (!widget.seamless || _userForced)) ...[
                 const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(

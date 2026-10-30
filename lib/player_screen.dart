@@ -490,7 +490,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (duration <= 0 ||
         position < 2000 ||
         (position < duration ~/ 2 && duration - position > 45000) ||
-        state.buffer.inMilliseconds - position < 5000) {
+        state.buffer.inMilliseconds < 5000) {
       return;
     }
     _preloader.prepare(
@@ -916,7 +916,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _beginSeamless() {
     _seamlessAdvance = true;
     _seamlessTimer?.cancel();
-    _seamlessTimer = Timer(const Duration(seconds: 4), () {
+    _seamlessTimer = Timer(const Duration(seconds: 6), () {
       if (!mounted || _closed || !_seamlessAdvance) return;
       setState(() => _seamlessAdvance = false);
     });
