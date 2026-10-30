@@ -182,13 +182,17 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 				continue
 			}
 		}
+		width, _ := strconv.Atoi(mapString(meta, "vwidth"))
 		height, _ := strconv.Atoi(mapString(meta, "vheight"))
 		if definition, err := strconv.Atoi(hongguoQualityNumber.FindString(mapString(meta, "definition"))); err == nil && definition > 0 {
 			height = definition
-		} else if width, _ := strconv.Atoi(mapString(meta, "vwidth")); width > 0 && (height == 0 || width < height) {
+		} else if width > 0 && (height == 0 || width < height) {
 			height = width
 		}
 		media.Quality = height
+		media.Width = width
+		media.Height = height
+		media.Codec = codec
 		quality := height * 10
 		if codec == "h264" || codec == "avc1" {
 			quality++

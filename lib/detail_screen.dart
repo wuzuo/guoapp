@@ -46,7 +46,9 @@ class _DetailScreenState extends State<DetailScreen> {
   bool _expandedDescription = false;
   final _episodeAnchor = GlobalKey();
   final _detailScroll = ScrollController();
+  final _playFocus = FocusNode(debugLabel: 'detail-start-play');
   bool _initialActionHandled = false;
+  bool _playFocusRequested = false;
   late final int _profileEpoch;
   Widget? get _sourceDiagnostics => widget.repository.supportsSourceManagement
       ? SourceDiagnosticsButton(
@@ -61,6 +63,7 @@ class _DetailScreenState extends State<DetailScreen> {
     super.initState();
     _profileEpoch = widget.store.profileEpoch;
     widget.store.addListener(_onStoreChanged);
+    _playFocus.addListener(_onPlayFocusChanged);
     _load();
   }
 
@@ -76,9 +79,26 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void dispose() {
     _detailScroll.dispose();
+    _playFocus.removeListener(_onPlayFocusChanged);
+    _playFocus.dispose();
     widget.store.removeListener(_onStoreChanged);
     _generation++;
     super.dispose();
+  }
+
+  void _focusPlayButton() {
+    if (_playFocusRequested || !mounted || !AppLayout.isTelevision(context)) {
+      return;
+    }
+    if (_detail == null || _detail!.episodes.isEmpty) return;
+    _playFocusRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _playFocus.canRequestFocus) _playFocus.requestFocus();
+    });
+  }
+
+  void _onPlayFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onStoreChanged() {
@@ -114,6 +134,7 @@ class _DetailScreenState extends State<DetailScreen> {
             episodePageSize;
       });
       widget.repository.catalogUpdates.publish(merged, retryCover: true);
+      _focusPlayButton();
       unawaited(_supplement(merged, generation));
       await saveUserChange(context, () => widget.store.refreshDrama(merged));
       if (mounted &&
@@ -456,6 +477,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       Expanded(
                         child: FilledButton.icon(
                           key: const ValueKey('start-play'),
+                          focusNode: _playFocus,
                           autofocus: television,
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(0, 52),
@@ -463,6 +485,19 @@ class _DetailScreenState extends State<DetailScreen> {
                               horizontal: 16,
                               vertical: 12,
                             ),
+                            backgroundColor: _playFocus.hasFocus
+                                ? Colors.white
+                                : null,
+                            foregroundColor: _playFocus.hasFocus
+                                ? Colors.black
+                                : null,
+                            side: BorderSide(
+                              color: _playFocus.hasFocus
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.transparent,
+                              width: 3,
+                            ),
+                            elevation: _playFocus.hasFocus ? 6 : 0,
                           ),
                           onPressed: !allowed || _loading || episodes.isEmpty
                               ? null

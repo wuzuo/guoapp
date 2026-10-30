@@ -62,6 +62,7 @@ class MediaKitPlaybackPlayer implements PlaybackPlayer {
     bool play = true,
     String decryptionKey = '',
     bool local = false,
+    List<PlaybackSource> sources = const [],
   }) => _player.open(
     Media(url, httpHeaders: headers, start: start),
     play: play,

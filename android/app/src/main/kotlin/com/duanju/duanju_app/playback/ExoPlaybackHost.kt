@@ -52,6 +52,8 @@ class ExoPlaybackHost(
     private var nextId = 1
 
     init {
+        CodecCapabilities.init(context)
+        CodecCapabilities.logDevice()
         channel.setMethodCallHandler(this)
         engine.platformViewsController.registry.registerViewFactory(
             "duanju/playback-view",
@@ -151,6 +153,12 @@ class ExoPlaybackHost(
         private var attached: Surface? = null
         private var dropped = 0
         private var released = false
+        private var sources: List<Source> = emptyList()
+        private var softChecked = false
+        private var sourceIndex = 0
+        private var downgrades = 0
+        private var wantPlay = true
+        private val syncGuard = PlaybackSyncGuard()
 
         init {
             try {
@@ -195,6 +203,7 @@ class ExoPlaybackHost(
                 ) {
                     Log.i(TAG, "解码器 $decoderName 初始化 ${initializationDurationMs}ms")
                     send("decoder", mapOf("name" to decoderName))
+                    softDowngradeIfNeeded(decoderName)
                 }
 
                 override fun onDroppedVideoFrames(
@@ -204,6 +213,21 @@ class ExoPlaybackHost(
                 ) {
                     dropped += droppedFrames
                     Log.w(TAG, "丢帧 $droppedFrames 累计 $dropped 耗时 ${elapsedMs}ms")
+                }
+
+                override fun onVideoFrameProcessingOffset(
+                    eventTime: AnalyticsListener.EventTime,
+                    totalProcessingOffsetUs: Long,
+                    frameCount: Int,
+                ) {
+                    if (!syncGuard.offer(totalProcessingOffsetUs, frameCount, player.isPlaying)) {
+                        return
+                    }
+                    Log.w(
+                        TAG,
+                        "音画漂移过大，重新对齐（偏移 ${totalProcessingOffsetUs / 1000}ms）",
+                    )
+                    runCatching { player.seekTo(player.currentPosition) }
                 }
 
                 override fun onAudioUnderrun(
@@ -240,6 +264,7 @@ class ExoPlaybackHost(
 
                 override fun onPlayerError(error: PlaybackException) {
                     Log.w(TAG, "player error ${error.errorCodeName}: ${error.message}")
+                    if (fallbackToLowerSource(error)) return
                     send("error", mapOf("message" to (error.message ?: error.errorCodeName)))
                 }
             })
@@ -370,24 +395,79 @@ class ExoPlaybackHost(
             val start = call.argument<Number>("start")?.toLong() ?: 0L
             val play = call.argument<Boolean>("play") ?: true
             val key = call.argument<String>("key").orEmpty()
-            val local = call.argument<Boolean>("local") ?: false
+            val rows = call.argument<List<Map<*, *>>>("sources").orEmpty()
+            wantPlay = play
+            val candidates = rows.mapNotNull { row ->
+                val sourceUrl = (row["url"] as? String).orEmpty()
+                if (sourceUrl.isEmpty()) return@mapNotNull null
+                Source(
+                    url = sourceUrl,
+                    headers = (row["headers"] as? Map<*, *>)?.entries
+                        ?.associate { it.key.toString() to it.value.toString() }
+                        ?: emptyMap(),
+                    key = (row["decryptionKey"] as? String).orEmpty(),
+                    quality = (row["quality"] as? Number)?.toInt() ?: 0,
+                    codec = (row["codec"] as? String).orEmpty(),
+                    width = (row["width"] as? Number)?.toInt() ?: 0,
+                    height = (row["height"] as? Number)?.toInt() ?: 0,
+                )
+            }.ifEmpty { listOf(Source(url, headers, key, 0, "", 0, 0)) }
+            sources = orderForDevice(candidates)
+            sourceIndex = 0
+            downgrades = 0
+            softChecked = false
+            Log.i(
+                TAG,
+                "打开播放 收到 ${rows.size} 档，采用 " + sources.joinToString {
+                    "${it.quality}P ${it.codec} ${it.width}x${it.height}"
+                },
+            )
+            switchTo(0, start, play, result)
+        }
+
+        private fun orderForDevice(candidates: List<Source>): List<Source> {
+            if (candidates.size <= 1) return candidates
+            val sorted = candidates.sortedByDescending { it.quality }
+            val playable = sorted.filter { CodecCapabilities.supports(it.codec, it.width, it.height) }
+            if (playable.isEmpty()) {
+                Log.w(TAG, "所有档位都超出解码能力，用最低档软解")
+                return listOf(sorted.last())
+            }
+            if (playable.size != sorted.size) {
+                Log.i(TAG, "跳过 ${sorted.size - playable.size} 个超出解码能力的档位")
+            }
+            return playable
+        }
+
+        private fun switchTo(
+            index: Int,
+            start: Long,
+            play: Boolean,
+            result: MethodChannel.Result?,
+        ) {
+            val source = sources.getOrNull(index)
+            if (source == null) {
+                result?.success(null)
+                return
+            }
+            sourceIndex = index
             worker.execute {
-                val source = try {
-                    buildSource(url, headers, key, local)
+                val media = try {
+                    buildSource(source.url, source.headers, source.key, localSource(source.url))
                 } catch (error: Throwable) {
                     main.post {
                         send("error", mapOf("message" to (error.message ?: "播放地址解析失败")))
-                        result.success(null)
+                        result?.success(null)
                     }
                     return@execute
                 }
                 main.post {
                     if (released) {
-                        result.success(null)
+                        result?.success(null)
                         return@post
                     }
                     try {
-                        player.setMediaSource(source)
+                        player.setMediaSource(media)
                         player.prepare()
                         if (start > 0) player.seekTo(start)
                         player.playWhenReady = play
@@ -395,9 +475,14 @@ class ExoPlaybackHost(
                     } catch (error: Throwable) {
                         send("error", mapOf("message" to (error.message ?: "无法开始播放")))
                     }
-                    result.success(null)
+                    result?.success(null)
                 }
             }
+        }
+
+        private fun localSource(url: String): Boolean {
+            val scheme = Uri.parse(url).scheme.orEmpty()
+            return scheme == "file" || scheme.isEmpty()
         }
 
         private fun buildSource(
@@ -428,6 +513,51 @@ class ExoPlaybackHost(
             } else {
                 ProgressiveMediaSource.Factory(dataSource).createMediaSource(item)
             }
+        }
+
+        private fun isSoftwareDecoder(name: String): Boolean {
+            val lower = name.lowercase()
+            return lower.contains("google") ||
+                lower.contains("ffmpeg") ||
+                lower.contains("software") ||
+                lower.startsWith("c2.android")
+        }
+
+        private fun softDowngradeIfNeeded(decoderName: String) {
+            if (softChecked) return
+            softChecked = true
+            if (!isSoftwareDecoder(decoderName)) return
+            val current = sources.getOrNull(sourceIndex) ?: return
+            val tiers = sources.map { it.quality }.distinct().sortedDescending()
+            if (tiers.size <= 1) return
+            val target = tiers.firstOrNull { it in 1..720 } ?: return
+            if (current.quality <= target) return
+            val index = sources.indexOfFirst { it.quality == target }
+            if (index < 0) return
+            val position = runCatching { player.currentPosition }.getOrDefault(0L)
+            Log.i(TAG, "软解 ${current.quality}P 压力过大，自动降到 ${target}P 从 ${position}ms 继续")
+            send("downgrade", mapOf("quality" to target, "codec" to sources[index].codec))
+            main.post { switchTo(index, position, wantPlay, null) }
+        }
+
+        private fun fallbackToLowerSource(error: PlaybackException): Boolean {
+            val decoderProblem =
+                error.errorCode in PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
+            if (!decoderProblem) return false
+            if (downgrades >= 3 || sourceIndex + 1 >= sources.size) return false
+            val current = sources.getOrNull(sourceIndex) ?: return false
+            CodecCapabilities.learnFailure(current.codec, current.width, current.height)
+            val position = runCatching { player.currentPosition }.getOrDefault(0L)
+            downgrades++
+            val next = sources[sourceIndex + 1]
+            Log.w(
+                TAG,
+                "解码失败，降到 ${next.quality}P ${next.codec} ${next.width}x${next.height} 从 ${position}ms 继续",
+            )
+            send("downgrade", mapOf("quality" to next.quality, "codec" to next.codec))
+            switchTo(sourceIndex + 1, position, wantPlay, null)
+            return true
         }
 
         fun attachPlatformView(view: PlayerView) {
@@ -465,6 +595,16 @@ class ExoPlaybackHost(
         }
     }
 }
+
+private data class Source(
+    val url: String,
+    val headers: Map<String, String>,
+    val key: String,
+    val quality: Int,
+    val codec: String,
+    val width: Int,
+    val height: Int,
+)
 
 private class PlaybackViewFactory(private val host: ExoPlaybackHost) :
     PlatformViewFactory(StandardMessageCodec.INSTANCE) {

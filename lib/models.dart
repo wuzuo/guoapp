@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'app_build.dart';
+import 'playback_source.dart';
 
 class SourceSite {
   const SourceSite(this.id, this.name, this.description);
@@ -262,6 +263,7 @@ class PlaybackPlan {
     this.routeIndex = 0,
     this.routeCount = 1,
     this.local = false,
+    this.sources = const [],
   });
   final String url;
   final Map<String, String> headers;
@@ -275,6 +277,7 @@ class PlaybackPlan {
   final int routeIndex;
   final int routeCount;
   final bool local;
+  final List<PlaybackSource> sources;
   bool get hasAlternative => session.isNotEmpty && routeIndex + 1 < routeCount;
   factory PlaybackPlan.fromJson(Map<String, dynamic> json) => PlaybackPlan(
     url: json['url'] as String? ?? '',
@@ -294,6 +297,10 @@ class PlaybackPlan {
     routeCount: intValue(json['routeCount']) > 0
         ? intValue(json['routeCount'])
         : 1,
+    sources: [
+      for (final row in json['sources'] as List? ?? const [])
+        PlaybackSource.fromJson(Map<String, dynamic>.from(row as Map)),
+    ],
   );
 }
 

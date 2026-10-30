@@ -176,6 +176,9 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
       case 'decoder':
         final name = (event['name'] as String? ?? '').trim();
         if (name.isNotEmpty) _state = _state.copyWith(decoder: name);
+      case 'downgrade':
+        final quality = (event['quality'] as num?)?.toInt() ?? 0;
+        if (quality > 0) _state = _state.copyWith(quality: quality);
       case 'error':
         final message = (event['message'] as String? ?? '').trim();
         if (message.isNotEmpty) _error.add(message);
@@ -196,6 +199,7 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
     bool play = true,
     String decryptionKey = '',
     bool local = false,
+    List<PlaybackSource> sources = const [],
   }) async {
     _state = _state.copyWith(
       mediaUri: url,
@@ -211,6 +215,7 @@ class ExoPlaybackPlayer implements PlaybackPlayer {
       'play': play,
       'key': decryptionKey,
       'local': local,
+      'sources': [for (final source in sources) source.toJson()],
     });
   }
 

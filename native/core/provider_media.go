@@ -18,6 +18,9 @@ type providerMedia struct {
 	HLSKey      []byte
 	CENCKey     []byte
 	Quality     int
+	Codec       string
+	Width       int
+	Height      int
 	Variants    []providerMedia
 }
 

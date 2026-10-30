@@ -71,11 +71,26 @@ func (engine *nativeEngine) nativeOpenPlayback(ctx context.Context, choice nativ
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nativePlan{}, errors.New("无法初始化播放会话")
 	}
+	headers := map[string]string{"User-Agent": userAgent, "Referer": media.Referer}
+	sources := make([]nativeSource, 0, len(choice.media))
+	for _, option := range choice.media {
+		sources = append(sources, nativeSource{
+			URL:      option.URL,
+			Headers:  map[string]string{"User-Agent": userAgent, "Referer": option.Referer},
+			Key:      hex.EncodeToString(option.CENCKey),
+			Quality:  option.Quality,
+			Codec:    option.Codec,
+			Width:    option.Width,
+			Height:   option.Height,
+			Playlist: option.Playlist,
+		})
+	}
 	plan := nativePlan{
 		DanmakuID: choice.danmakuVideo,
-		URL:       media.URL, Headers: map[string]string{"User-Agent": userAgent, "Referer": media.Referer},
+		URL:       media.URL, Headers: headers,
 		Key: hex.EncodeToString(media.CENCKey), Quality: media.Quality, Qualities: choice.qualities,
 		RouteIndex: choice.index, RouteCount: len(choice.media), Session: hex.EncodeToString(tokenBytes),
+		Sources: sources,
 	}
 	if media.credentials != nil && !media.credentials.expires.IsZero() {
 		if !time.Now().Before(media.credentials.expires) {

@@ -133,6 +133,18 @@ type nativePlan struct {
 	Session         string            `json:"session,omitempty"`
 	RouteIndex      int               `json:"routeIndex"`
 	RouteCount      int               `json:"routeCount"`
+	Sources         []nativeSource    `json:"sources,omitempty"`
+}
+
+type nativeSource struct {
+	URL      string            `json:"url"`
+	Headers  map[string]string `json:"headers"`
+	Key      string            `json:"decryptionKey,omitempty"`
+	Quality  int               `json:"quality"`
+	Codec    string            `json:"codec,omitempty"`
+	Width    int               `json:"width,omitempty"`
+	Height   int               `json:"height,omitempty"`
+	Playlist string            `json:"playlist,omitempty"`
 }
 
 type nativeEngine struct {

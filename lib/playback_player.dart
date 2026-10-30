@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'playback_source.dart';
+
+export 'playback_source.dart';
+
 class PlaybackVideoSize {
   const PlaybackVideoSize(this.width, this.height);
 
@@ -25,6 +29,7 @@ class PlaybackState {
     this.mediaUri = '',
     this.decoder = '',
     this.dropped = 0,
+    this.quality = 0,
   });
 
   final Duration position;
@@ -39,6 +44,7 @@ class PlaybackState {
   final String mediaUri;
   final String decoder;
   final int dropped;
+  final int quality;
 
   int? get width => video?.width;
 
@@ -57,6 +63,7 @@ class PlaybackState {
     String? mediaUri,
     String? decoder,
     int? dropped,
+    int? quality,
   }) => PlaybackState(
     position: position ?? this.position,
     duration: duration ?? this.duration,
@@ -70,6 +77,7 @@ class PlaybackState {
     mediaUri: mediaUri ?? this.mediaUri,
     decoder: decoder ?? this.decoder,
     dropped: dropped ?? this.dropped,
+    quality: quality ?? this.quality,
   );
 }
 
@@ -111,6 +119,7 @@ abstract class PlaybackPlayer {
     bool play = true,
     String decryptionKey = '',
     bool local = false,
+    List<PlaybackSource> sources = const [],
   });
 
   Future<void> play();

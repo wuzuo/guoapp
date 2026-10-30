@@ -844,6 +844,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           play: _foreground && _playIntent,
           decryptionKey: plan.decryptionKey,
           local: plan.local,
+          sources: plan.sources,
         );
         if (_closed || ticket != _generation) {
           return;
@@ -924,6 +925,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   String get _engineInfo {
     final state = _player.state;
     final parts = <String>[];
+    final quality = state.quality > 0 ? state.quality : (_plan?.quality ?? 0);
+    if (quality > 0) parts.add('当前 ${quality}P');
     if (state.decoder.isNotEmpty) parts.add('解码器 ${state.decoder}');
     if (state.width != null && state.height != null) {
       parts.add('${state.width}x${state.height}');
@@ -1056,7 +1059,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               currentIndex: _index,
               preferences: _preferences,
               qualities: _plan?.qualities ?? [],
-              actualQuality: _plan?.quality ?? 0,
+              actualQuality: _player.state.quality > 0
+                  ? _player.state.quality
+                  : (_plan?.quality ?? 0),
               local: _plan?.local == true,
               favorite: widget.store.isFavorite(widget.detail.drama.id),
               mobile: _mobile,
@@ -1164,7 +1169,9 @@ class _PlayerScreenState extends State<PlayerScreen>
             preloadStatus: _preloader.status,
             frameMode: _frameMode,
             hardwareDecoding: _hardwareDecoding,
-            actualQuality: _plan?.quality ?? 0,
+            actualQuality: _player.state.quality > 0
+                ? _player.state.quality
+                : (_plan?.quality ?? 0),
             engineInfo: _engineInfo,
           ),
         ),
