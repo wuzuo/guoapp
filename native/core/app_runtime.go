@@ -147,6 +147,11 @@ type nativeSource struct {
 	Playlist string            `json:"playlist,omitempty"`
 }
 
+type nativeCachedMedia struct {
+	media providerMedia
+	at    time.Time
+}
+
 type nativeEngine struct {
 	lanMu            sync.Mutex
 	lan              *nativeLANServer
@@ -169,6 +174,8 @@ type nativeEngine struct {
 	sourceSaveError  error
 	covers           *nativeCoverCache
 	stream           *nativeStreamServer
+	mediaMu          sync.Mutex
+	mediaCache       map[string]nativeCachedMedia
 	playbacks        map[string]nativePlaybackChoice
 	playbackMu       sync.Mutex
 	playbackSequence int64
@@ -697,6 +704,35 @@ func (engine *nativeEngine) nativeDetail(ctx context.Context, drama nativeDrama)
 	return map[string]any{"drama": drama, "chapters": chapters, "warning": warning}, nil
 }
 
+// cachedProviderMedia 复用短时间内解析过的播放地址，避免切集/重试重复打播放接口。
+func (engine *nativeEngine) cachedProviderMedia(ctx context.Context, task Task) (providerMedia, error) {
+	key := task.DramaID + "\x00" + task.Chapter.ID + "\x00" + task.Chapter.VideoURL + "\x00" + fmt.Sprint(task.Index)
+	engine.mediaMu.Lock()
+	cached, ok := engine.mediaCache[key]
+	engine.mediaMu.Unlock()
+	if ok && time.Since(cached.at) < 45*time.Second {
+		return cached.media, nil
+	}
+	media, err := engine.downloader.resolveProviderMedia(ctx, task)
+	if err != nil {
+		return providerMedia{}, err
+	}
+	engine.mediaMu.Lock()
+	if engine.mediaCache == nil {
+		engine.mediaCache = map[string]nativeCachedMedia{}
+	}
+	if len(engine.mediaCache) > 32 {
+		for id, entry := range engine.mediaCache {
+			if time.Since(entry.at) > 45*time.Second {
+				delete(engine.mediaCache, id)
+			}
+		}
+	}
+	engine.mediaCache[key] = nativeCachedMedia{media: media, at: time.Now()}
+	engine.mediaMu.Unlock()
+	return media, nil
+}
+
 func (engine *nativeEngine) nativeResolve(ctx context.Context, input nativeInput) (nativePlan, error) {
 	if _, _, valid := splitProviderDramaID(input.Drama.ID); !valid {
 		return nativePlan{}, errors.New("剧集信息无效")
@@ -709,7 +745,7 @@ func (engine *nativeEngine) nativeResolve(ctx context.Context, input nativeInput
 		}
 	}
 	task := Task{DramaID: input.Drama.ID, DramaTitle: input.Drama.Title, Chapter: input.Chapter, Index: input.Index}
-	media, err := engine.downloader.resolveProviderMedia(ctx, task)
+	media, err := engine.cachedProviderMedia(ctx, task)
 	if err != nil {
 		return nativePlan{}, err
 	}

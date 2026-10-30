@@ -301,6 +301,11 @@ func (downloader *Downloader) hongguoAppSend(
 	if !comment && attempts < 3 {
 		attempts = 3
 	}
+	// 播放取流由上层按候选路径与设备身份重试，单次请求不再叠加 1s/2s 退避，
+	// 否则一次播放失败会在 5 条路径 × 3 次重试上累计十几秒。
+	if strings.Contains(path, "/player/") {
+		attempts = 1
+	}
 	if comment && len(hosts) > attempts {
 		attempts = len(hosts)
 	}

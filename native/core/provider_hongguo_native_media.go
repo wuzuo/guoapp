@@ -37,6 +37,11 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
 	ctx = context.WithValue(ctx, hongguoCookieKey{}, true)
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 9*time.Second)
+		defer cancel()
+	}
 	biz := hongguoPlaybackBizParam()
 	videoModelBody := map[string]any{"video_id": videoID, "biz_param": biz}
 	mixedBody := map[string]any{"biz_param": biz, "mixed_video_id_map": map[string]any{"1004": []string{videoID}}}
@@ -45,9 +50,6 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		body any
 	}{
 		{"/novel/player/video_model/v1/", videoModelBody},
-		{"/novel/player/multi_video_model/preload/v1/", mixedBody},
-		{"/novel/player/multi_video_model/default/v1/", mixedBody},
-		{"/novel/player/multi_video_model/detail/v1/", mixedBody},
 		{"/novel/player/multi_video_model/v1/", mixedBody},
 	}
 	var lastErr error
