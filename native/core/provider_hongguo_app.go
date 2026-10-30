@@ -18,7 +18,9 @@ const hongguoAppBaseURL = "https://api5-normal-sinfonlineb.fqnovel.com"
 
 var errHongguoBlankResponse = errors.New("红果 App 接口未返回有效数据")
 
-const hongguoDeviceRotateInterval = 90 * time.Second
+const hongguoDeviceRotateInterval = 3 * time.Second
+
+const hongguoDeviceRotateBurst = 8
 
 // 评论/弹幕接口按 host 限流，参考实现 commentHosts 多 host 回退。
 var hongguoCommentHosts = []string{
@@ -88,8 +90,12 @@ type hongguoAppClient struct {
 	registerAt   time.Time
 	registerErr  error
 
-	playback hongguoPlaybackIdentity
-	rotateAt time.Time
+	playback     hongguoPlaybackIdentity
+	spare        hongguoPlaybackIdentity
+	spareLoading bool
+	rotateAt     time.Time
+	rotateWindow time.Time
+	rotateCount  int
 }
 
 type hongguoPlaybackIdentity struct {
@@ -200,10 +206,27 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	if err == nil || !isHongguoBlankResponseError(err) {
 		return result, err
 	}
-	if !downloader.rotateHongguoIdentity(ctx, strings.Contains(path, "/player/")) {
-		return result, err
+	// 网关按设备身份挡请求：换新设备后立刻重试同一路径，最多两轮，
+	// 让用户点一次播放就拿到地址，而不是反复手动重试。
+	playback := strings.Contains(path, "/player/")
+	for round := 0; round < 2; round++ {
+		if ctx.Err() != nil {
+			return result, err
+		}
+		if !downloader.rotateHongguoIdentity(ctx, playback) {
+			return result, err
+		}
+		select {
+		case <-time.After(150 * time.Millisecond):
+		case <-ctx.Done():
+			return result, err
+		}
+		result, err = downloader.hongguoAppRequestOnce(ctx, method, path, extra, payload)
+		if err == nil || !isHongguoBlankResponseError(err) {
+			return result, err
+		}
 	}
-	return downloader.hongguoAppRequestOnce(ctx, method, path, extra, payload)
+	return result, err
 }
 
 func (downloader *Downloader) hongguoAppRequestOnce(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {

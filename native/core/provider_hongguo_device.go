@@ -240,17 +240,65 @@ func (downloader *Downloader) hongguoPlaybackProfile(ctx context.Context) honggu
 	client.mu.Lock()
 	client.playback = next
 	client.mu.Unlock()
+	downloader.primeHongguoSpare()
 	return next
+}
+
+// primeHongguoSpare 在后台预注册一台备用设备：播放被网关挡掉时可以直接切换，
+// 不必等注册完成再重试。
+func (downloader *Downloader) primeHongguoSpare() {
+	client := downloader.hongguoClient()
+	client.mu.Lock()
+	if client.spare.Ready || client.spareLoading {
+		client.mu.Unlock()
+		return
+	}
+	client.spareLoading = true
+	client.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		registration, err := downloader.registerHongguoDevice(ctx)
+		client.mu.Lock()
+		client.spareLoading = false
+		if err == nil && hongguoNumericID.MatchString(registration.DeviceID) {
+			client.spare = hongguoPlaybackIdentity{
+				DeviceID:  registration.DeviceID,
+				InstallID: registration.InstallID,
+				Cdid:      newHongguoUUID(),
+				Cookies:   registration.Cookies,
+				Ready:     true,
+			}
+		}
+		client.mu.Unlock()
+	}()
 }
 
 func (downloader *Downloader) rotateHongguoIdentity(ctx context.Context, playback bool) bool {
 	client := downloader.hongguoClient()
 	now := time.Now()
 	client.mu.Lock()
+	if playback && client.spare.Ready {
+		next := client.spare
+		client.spare = hongguoPlaybackIdentity{}
+		client.playback = next
+		client.mu.Unlock()
+		downloader.primeHongguoSpare()
+		return true
+	}
 	if !client.rotateAt.IsZero() && now.Sub(client.rotateAt) < hongguoDeviceRotateInterval {
 		client.mu.Unlock()
 		return false
 	}
+	if now.Sub(client.rotateWindow) > time.Minute {
+		client.rotateWindow = now
+		client.rotateCount = 0
+	}
+	if client.rotateCount >= hongguoDeviceRotateBurst {
+		client.mu.Unlock()
+		return false
+	}
+	client.rotateCount++
 	client.rotateAt = now
 	if playback {
 		client.playback = hongguoPlaybackIdentity{}

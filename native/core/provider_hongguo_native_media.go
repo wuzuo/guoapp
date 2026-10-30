@@ -140,7 +140,11 @@ func isHongguoBlankResponseError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, errHongguoBlankResponse) || strings.Contains(err.Error(), "未返回有效数据")
+	if errors.Is(err, errHongguoBlankResponse) || strings.Contains(err.Error(), "未返回有效数据") {
+		return true
+	}
+	// 101000（服务异常）/ 110001（参数或风控）同样是网关挡请求，换设备后多半能恢复。
+	return strings.Contains(err.Error(), "101000") || strings.Contains(err.Error(), "110001")
 }
 
 func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
